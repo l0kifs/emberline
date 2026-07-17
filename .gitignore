@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Node / VS Code extension ---
+node_modules/
+extension/dist/
+extension/out/
+extension/.vscode-test/
+*.vsix
+
+# --- Emberline ---
+.python-version

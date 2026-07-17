@@ -1,0 +1,164 @@
+{
+  "name": "emberline",
+  "displayName": "Emberline",
+  "description": "Local inline code completion backed by a llama.cpp FIM model.",
+  "version": "0.1.0",
+  "publisher": "l0kifs",
+  "license": "MIT",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/l0kifs/emberline.git",
+    "directory": "extension"
+  },
+  "homepage": "https://github.com/l0kifs/emberline#readme",
+  "bugs": {
+    "url": "https://github.com/l0kifs/emberline/issues"
+  },
+  "engines": {
+    "vscode": "^1.104.0",
+    "node": ">=22"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Machine Learning"
+  ],
+  "keywords": [
+    "inline completion",
+    "copilot",
+    "llama.cpp",
+    "local",
+    "offline"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Completions send file contents to the configured endpoint, and a malicious workspace could repoint that endpoint.",
+      "restrictedConfigurations": [
+        "emberline.endpoint"
+      ]
+    },
+    "virtualWorkspaces": {
+      "supported": "limited",
+      "description": "Cross-file context is read from disk by the server, so it is unavailable in virtual workspaces."
+    }
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "Emberline",
+      "properties": {
+        "emberline.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "language-overridable",
+          "description": "Enable inline completions. Can be overridden per language."
+        },
+        "emberline.endpoint": {
+          "type": "string",
+          "default": "http://127.0.0.1:8011",
+          "scope": "machine-overridable",
+          "description": "Emberline inference server base URL."
+        },
+        "emberline.debounceMs": {
+          "type": "number",
+          "default": 150,
+          "minimum": 0,
+          "maximum": 2000,
+          "scope": "window",
+          "markdownDescription": "Delay before requesting a completion. VS Code already applies its own ~50ms debounce before calling the provider, so the effective delay is this plus 50ms."
+        },
+        "emberline.timeoutMs": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 500,
+          "maximum": 60000,
+          "scope": "window",
+          "description": "Hard timeout for a completion request."
+        },
+        "emberline.disabledLanguages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "plaintext",
+            "markdown",
+            "scminput"
+          ],
+          "scope": "window",
+          "description": "Language ids for which completions are never requested."
+        },
+        "emberline.maxPrefixChars": {
+          "type": "number",
+          "default": 8192,
+          "minimum": 256,
+          "scope": "window",
+          "description": "Characters before the cursor to send. The server truncates further."
+        },
+        "emberline.maxSuffixChars": {
+          "type": "number",
+          "default": 2048,
+          "minimum": 0,
+          "scope": "window",
+          "description": "Characters after the cursor to send."
+        },
+        "emberline.maxLineSuffixChars": {
+          "type": "number",
+          "default": 8,
+          "minimum": 0,
+          "scope": "window",
+          "markdownDescription": "Skip automatic completion when more than this many non-whitespace characters follow the cursor on the same line. Mid-line suggestions are rarely useful; llama.vim uses 8."
+        },
+        "emberline.sendOpenFiles": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "Send paths of other open files so the server can build cross-file context. Paths only; the server reads the contents itself."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "emberline.toggle",
+        "title": "Emberline: Toggle Inline Completions"
+      },
+      {
+        "command": "emberline.showLogs",
+        "title": "Emberline: Show Logs"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "24.x",
+    "@types/vscode": "^1.104.0",
+    "@typescript-eslint/eslint-plugin": "^8.20.0",
+    "@typescript-eslint/parser": "^8.20.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^2.4.1",
+    "esbuild": "^0.28.1",
+    "eslint": "^9.18.0",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,50 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			// Default F5 from the repo root: starts the server (reusing one if it is
+			// already up), builds the extension, and opens the Extension Development Host.
+			"name": "Run Extension + Server",
+			"type": "extensionHost",
+			"request": "launch",
+			"args": ["--extensionDevelopmentPath=${workspaceFolder}/extension"],
+			"outFiles": ["${workspaceFolder}/extension/dist/**/*.js"],
+			"preLaunchTask": "dev: server + watch"
+		},
+		{
+			// Use when the server is already running in your own terminal.
+			"name": "Run Extension only",
+			"type": "extensionHost",
+			"request": "launch",
+			"args": ["--extensionDevelopmentPath=${workspaceFolder}/extension"],
+			"outFiles": ["${workspaceFolder}/extension/dist/**/*.js"],
+			"preLaunchTask": "extension: watch"
+		},
+		{
+			// --disable-extensions turns off every OTHER extension while still loading
+			// Emberline (that combination is the supported way to test in isolation).
+			// Worth it when judging suggestion quality: any other inline completion
+			// provider (Copilot, Codeium) competes for the same ghost text slot, and
+			// `yieldTo` -- the API for deferring to another provider -- is proposed and
+			// therefore unusable in a shipped extension. Costs you Claude Code and the
+			// rest of your extensions in that window.
+			"name": "Run Extension (isolated)",
+			"type": "extensionHost",
+			"request": "launch",
+			"args": [
+				"--extensionDevelopmentPath=${workspaceFolder}/extension",
+				"--disable-extensions"
+			],
+			"outFiles": ["${workspaceFolder}/extension/dist/**/*.js"],
+			"preLaunchTask": "dev: server + watch"
+		},
+		{
+			"name": "Extension Tests",
+			"type": "extensionHost",
+			"request": "launch",
+			"testConfiguration": "${workspaceFolder}/extension/.vscode-test.mjs",
+			"args": ["--extensionDevelopmentPath=${workspaceFolder}/extension"],
+			"outFiles": ["${workspaceFolder}/extension/out/**/*.js"]
+		}
+	]
+}

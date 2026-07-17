@@ -1,0 +1,55 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "watch",
+			"dependsOn": ["npm: watch:tsc", "npm: watch:esbuild"],
+			"dependsOrder": "parallel",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": []
+		},
+		{
+			"type": "npm",
+			"script": "watch:esbuild",
+			"group": "build",
+			// Inline, because `$esbuild-watch` is NOT built into VS Code -- it comes from
+			// the connor4312.esbuild-problem-matchers extension. These patterns match what
+			// esbuild.js prints via esbuildProblemMatcherPlugin.
+			"problemMatcher": {
+				"owner": "esbuild",
+				"fileLocation": ["relative", "${workspaceFolder}"],
+				"pattern": [
+					{
+						"regexp": "^✘ \\[ERROR\\] (.*)$",
+						"message": 1
+					},
+					{
+						"regexp": "^\\s+(.*):(\\d+):(\\d+):$",
+						"file": 1,
+						"line": 2,
+						"column": 3
+					}
+				],
+				"background": {
+					"activeOnStart": true,
+					"beginsPattern": "^\\[watch\\] build started$",
+					"endsPattern": "^\\[watch\\] build finished$"
+				}
+			},
+			"isBackground": true,
+			"label": "npm: watch:esbuild"
+		},
+		{
+			"type": "npm",
+			"script": "watch:tsc",
+			"group": "build",
+			// $tsc-watch IS built in (TypeScript language features extension).
+			"problemMatcher": "$tsc-watch",
+			"isBackground": true,
+			"label": "npm: watch:tsc"
+		}
+	]
+}

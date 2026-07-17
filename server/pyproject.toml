@@ -1,0 +1,43 @@
+[project]
+name = "emberline-server"
+version = "0.1.0"
+description = "Local FIM inference server for the Emberline VS Code extension"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.139.1",
+    "uvicorn[standard]>=0.51.0",
+    "httpx>=0.28",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.2",
+    "numpy>=2.1",
+    "fastembed>=0.8.0",
+]
+
+[project.scripts]
+emberline-server = "emberline.__main__:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.15",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.25,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "emberline"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

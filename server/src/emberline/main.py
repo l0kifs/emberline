@@ -19,6 +19,7 @@ from emberline.context.examples import ExampleStore
 from emberline.context.ring import RingContext
 from emberline.engine.cache import CompletionCache
 from emberline.engine.supersede import Supersede
+from emberline.runtime.idle import IdleShutdown
 from emberline.runtime.infill import InfillClient
 from emberline.runtime.llama_server import LlamaServer
 
@@ -35,6 +36,7 @@ class AppContext:
     assembler: Assembler
     examples: ExampleStore | None
     params_digest: str
+    idle: IdleShutdown
 
     async def llama_healthy(self) -> bool:
         try:
@@ -101,6 +103,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         chunk_lines=settings.ring_chunk_lines,
     )
 
+    idle = IdleShutdown(settings.idle_timeout_s)
+
     ctx = AppContext(
         settings=settings,
         llama=llama,
@@ -110,13 +114,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         assembler=Assembler(settings, ring=ring, examples=examples),
         examples=examples,
         params_digest=_params_digest(settings),
+        idle=idle,
     )
     app.state.ctx = ctx
+    idle.start()
     log.info("emberline ready on %s:%s", settings.host, settings.port)
 
     try:
         yield
     finally:
+        await idle.stop()
         await ctx.infill.aclose()
         if examples is not None:
             await examples.aclose()

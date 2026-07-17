@@ -8,6 +8,7 @@ import {
 } from '../client/http';
 import { extractContext, shouldSuppressMidLine } from '../completion/context';
 import { Debouncer } from '../completion/debounce';
+import { uvToolEnv } from '../server/uv';
 
 suite('context extraction', () => {
 	test('splits at the cursor', () => {
@@ -114,5 +115,20 @@ suite('debouncer', () => {
 	test('zero delay does not skip', async () => {
 		const d = new Debouncer();
 		assert.strictEqual(await d.shouldSkip(0, new AbortController().signal), false);
+	});
+});
+
+suite('uv tool environment', () => {
+	// The whole point of these vars is that `uv tool install` writes nothing to
+	// the shared ~/.local tree we don't own and can't clean up on uninstall. If a
+	// key is dropped or points outside storage, that isolation silently breaks.
+	test('confines every uv path under the storage dir', () => {
+		const env = uvToolEnv('/store');
+		assert.strictEqual(env.UV_TOOL_DIR, '/store/uv/tools');
+		assert.strictEqual(env.UV_TOOL_BIN_DIR, '/store/uv/bin');
+		assert.strictEqual(env.UV_PYTHON_INSTALL_DIR, '/store/uv/python');
+		for (const v of Object.values(env)) {
+			assert.ok(v.startsWith('/store/'), `${v} escapes the storage dir`);
+		}
 	});
 });

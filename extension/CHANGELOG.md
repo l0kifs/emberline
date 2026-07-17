@@ -10,6 +10,13 @@ First release.
 - Cross-file context from open files, ranked by identifier overlap.
 - Accepted completions are stored locally and retrieved as few-shot examples.
 - Status bar showing state and last-completion latency; click to toggle.
-- Setup prompt when the server is unreachable.
+- Zero-setup on Apple Silicon: the VSIX bundles the `llama-server` engine, and on
+  first use the extension installs the inference server (from PyPI, via a private
+  `uv`) and downloads the model after a single consent prompt. Set
+  `emberline.manageServer` to `false` to run the server yourself instead.
+- The server exits after 30 minutes idle (`EMBERLINE__IDLE_TIMEOUT_S`), so an
+  editor can start it and never have to stop it — it stays shared and warm across
+  windows and frees its memory on its own.
+- Manual-setup prompt when `manageServer` is off and the server is unreachable.
 - Toggling writes `emberline.enabled`, so it survives a reload, and honours the
   scope the setting is already defined in.

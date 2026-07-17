@@ -1,0 +1,51 @@
+# Publishes emberline-server to PyPI on a version tag.
+#
+# Uses PyPI Trusted Publishing (OIDC) -- no API token is stored anywhere. One
+# manual step is required once, before the first run: create a "pending
+# publisher" at https://pypi.org/manage/account/publishing/ for project
+# `emberline-server`, owner `l0kifs`, repo `emberline`, workflow
+# `publish-server.yml`, environment `pypi`. After the first successful publish
+# it becomes a normal trusted publisher.
+#
+# The extension pins the exact server version it expects (SERVER_VERSION in
+# extension/src/server/manage.ts). Keep the two in step: a tag here should match
+# an extension release that expects it.
+
+name: publish-server
+
+on:
+  push:
+    tags:
+      - 'server-v*'   # e.g. server-v0.1.0
+  workflow_dispatch:
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # required for trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Guard -- tag must match pyproject version
+        working-directory: server
+        run: |
+          set -euo pipefail
+          pkg_version="$(uv version --short)"
+          tag_version="${GITHUB_REF_NAME#server-v}"
+          if [ "$pkg_version" != "$tag_version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME implies $tag_version but pyproject.toml is $pkg_version"
+            exit 1
+          fi
+          echo "publishing emberline-server $pkg_version"
+
+      - name: Build sdist + wheel
+        working-directory: server
+        run: uv build
+
+      - name: Publish to PyPI
+        run: uv publish server/dist/*

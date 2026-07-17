@@ -1,13 +1,16 @@
 import * as vscode from 'vscode';
 
 const DISMISSED_KEY = 'emberline.setupPromptDismissed';
-const SETUP_URL = 'https://github.com/l0kifs/emberline#setup';
+// The extension README resolves to the Marketplace landing page and carries a
+// real "#setup" anchor; the root README does not, so linking there would just
+// dump the reader at the top of the page.
+const SETUP_URL = 'https://github.com/l0kifs/emberline/blob/main/extension/README.md#setup';
 
 /**
- * The first-run gap: Emberline ships no server, so an install from the
- * Marketplace produces silent nothing until the user starts one. The status bar
- * alone does not carry that -- a warning icon does not tell you to go run
- * `uv run emberline-server`.
+ * The manual-setup pointer, shown only when the user runs their own server
+ * (`emberline.manageServer: false`) and it is unreachable. In the default
+ * managed mode the provider never gets here -- ServerManager installs and starts
+ * the server instead, so there is no gap to paper over.
  *
  * Shown at most once per session, and never again after "Don't Show Again".
  * The provider calls this per keystroke, so both gates have to be cheap and the

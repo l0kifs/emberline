@@ -66,6 +66,23 @@ class Settings(BaseSettings):
     cache_max_entries: int = 250
     """llama.vim ships 250; no reason to differ."""
 
+    # --- lifetime ---
+    idle_timeout_s: float = 1800.0
+    """Exit after this long with no completion traffic. 0 disables.
+
+    This is what lets the editor start a server and never kill one. The process
+    is shared: a second VS Code window reuses it rather than spawning its own, so
+    whichever window happened to start it must not own it. It is also warm on
+    purpose -- the KV cache is the whole point -- so tying it to a window's
+    lifetime would throw away the design.
+
+    That leaves bounding it from the inside. Half an hour keeps it alive across a
+    restart or a coffee break (a reload costs seconds, and the model is ~1.6GB of
+    resident memory), while guaranteeing the memory comes back if the editor goes
+    away or crashes without deactivating. /health deliberately does not count as
+    traffic: a liveness probe means someone is looking, not that anyone is using.
+    """
+
     # --- cross-file ring buffer context ---
     ring_enabled: bool = True
     ring_max_chunks: int = 16

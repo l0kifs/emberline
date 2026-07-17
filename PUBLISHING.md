@@ -20,12 +20,28 @@ separate, editable field, so set it to whatever reads best ("Emberline" or your
 own name) at registration. Users see `displayName` from package.json
 ("Emberline") in the sidebar regardless.
 
-**What ships is only the client.** The VSIX is ~17 KB: `dist/extension.js` plus
-README, CHANGELOG, LICENSE, and the icon. The Python server, llama.cpp and the
-model are *not* bundled and are not distributed through the Marketplace — users
-install them from the repo. The extension's README leads with this, and
-`onboarding.ts` prompts anyone whose endpoint is dead. If that ever changes, this
-document changes with it.
+**Two VSIXes ship per release**, following rust-analyzer's model:
+
+- **`darwin-arm64`** (~9.5 MB): `dist/extension.js` plus the `llama-server`
+  engine and its dylibs, staged into `bin/llama/` by
+  [extension/scripts/fetch-llama.mjs](extension/scripts/fetch-llama.mjs). This is
+  the zero-setup build — the user installs nothing.
+- **untargeted fallback** (~20 KB): no binary. VS Code serves it on every other
+  platform, where the user provides `llama.cpp` themselves.
+
+Neither bundles the Python server or the model. The server is published to **PyPI**
+as `emberline-server` and installed on the user's machine by `uv` at first use
+(the extension carries a private `uv` if none is on `PATH`); the model downloads
+from Hugging Face on first run. So what reaches the Marketplace is the client plus,
+on Apple Silicon, the inference engine — not the server and not the model.
+
+Releases are cut by two tag-triggered GitHub Actions workflows, not by hand:
+[.github/workflows/publish-server.yml](.github/workflows/publish-server.yml) (tag
+`server-v*` → PyPI, via OIDC trusted publishing) and
+[.github/workflows/publish-extension.yml](.github/workflows/publish-extension.yml)
+(tag `ext-v*` → both VSIXes to the Marketplace). The manual steps below still apply
+for a local dry run or a broken-PAT fallback. If the bundling model ever changes,
+this document changes with it.
 
 ## One-time setup
 
@@ -82,11 +98,15 @@ the previous bundle against the new tests. See the testing notes in
 - [ ] `npx @vscode/vsce package` reports **no warnings**. A missing `repository`
       or `LICENSE` warning means something regressed.
 
-Inspect what you are about to ship:
+Inspect what you are about to ship. Stage the engine first for the targeted
+build — without it you get a `darwin-arm64` VSIX with no binary, which fails only
+on a user's machine:
 
 ```bash
-npx @vscode/vsce ls          # files that will be included
-npx @vscode/vsce package     # writes emberline-<version>.vsix
+node scripts/fetch-llama.mjs darwin-arm64          # stages bin/llama/ (~22 MB)
+npx @vscode/vsce ls                                # files that will be included
+npx @vscode/vsce package --target darwin-arm64     # writes the bundled VSIX
+npx @vscode/vsce package                           # untargeted fallback, no binary
 ```
 
 Install the VSIX locally before publishing — this is the only way to see what a

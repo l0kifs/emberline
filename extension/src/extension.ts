@@ -5,6 +5,7 @@ import { Config } from './config';
 import { createLogger } from './logging';
 import { Onboarding } from './onboarding';
 import { ACCEPTED_COMMAND, EmberlineProvider } from './provider';
+import { ServerManager } from './server/manage';
 import { StatusBar } from './status';
 
 /**
@@ -40,7 +41,13 @@ export function activate(context: vscode.ExtensionContext): void {
 	// about the user, not about one folder.
 	const onboarding = new Onboarding(context.globalState, log);
 
-	const provider = new EmberlineProvider(client, cfg, log, status, onboarding);
+	// Lifecycle only. Constructed here but not exercised until the first keystroke
+	// finds the server unreachable -- activate must stay cheap (onStartupFinished
+	// fires for every user), so nothing is installed or spawned at startup.
+	const server = new ServerManager(context, cfg, log);
+	context.subscriptions.push(server);
+
+	const provider = new EmberlineProvider(client, cfg, log, status, onboarding, server);
 
 	refreshStatus();
 	context.subscriptions.push(

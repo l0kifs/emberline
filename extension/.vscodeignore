@@ -3,6 +3,7 @@
 out/**
 node_modules/**
 src/**
+scripts/**
 .gitignore
 .nvmrc
 esbuild.js
@@ -11,3 +12,9 @@ esbuild.js
 **/*.map
 **/*.ts
 **/.vscode-test.*
+
+# NOTE: bin/** is deliberately NOT ignored. `scripts/fetch-llama.mjs <target>`
+# stages llama-server + its dylibs there, and shipping them is the entire point
+# of the platform-specific VSIX -- excluding bin/ silently produces a targeted
+# VSIX with no engine in it, which fails only on a user's machine. The
+# untargeted fallback VSIX has no bin/ to begin with, so it needs no rule here.

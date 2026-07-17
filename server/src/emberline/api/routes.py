@@ -41,6 +41,7 @@ async def _watch_disconnect(request: Request) -> None:
 @router.post("/v1/complete", response_model=None)
 async def complete(body: CompleteRequest, request: Request) -> CompleteResponse:
     ctx = request.app.state.ctx
+    ctx.idle.touch()
 
     # Claim a generation BEFORE any awaits, so an older in-flight request sees
     # itself go stale as soon as this one arrives.
@@ -73,9 +74,7 @@ async def complete(body: CompleteRequest, request: Request) -> CompleteResponse:
         gen_task = asyncio.create_task(ctx.infill.infill(infill_req, should_stop=should_stop))
         disc_task = asyncio.create_task(_watch_disconnect(request))
         try:
-            done, _ = await asyncio.wait(
-                {gen_task, disc_task}, return_when=asyncio.FIRST_COMPLETED
-            )
+            done, _ = await asyncio.wait({gen_task, disc_task}, return_when=asyncio.FIRST_COMPLETED)
             if gen_task not in done:
                 # Client vanished. Abandon the generation rather than heating the
                 # GPU for a suggestion nobody will see.
@@ -106,6 +105,7 @@ async def complete(body: CompleteRequest, request: Request) -> CompleteResponse:
 @router.post("/v1/accept")
 async def accept(body: AcceptRequest, request: Request) -> dict[str, int]:
     ctx = request.app.state.ctx
+    ctx.idle.touch()
     if ctx.examples is None:
         return {"examples": 0}
     await ctx.examples.add(

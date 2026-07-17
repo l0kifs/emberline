@@ -67,6 +67,12 @@
           "scope": "machine-overridable",
           "description": "Emberline inference server base URL."
         },
+        "emberline.manageServer": {
+          "type": "boolean",
+          "default": true,
+          "scope": "machine-overridable",
+          "markdownDescription": "Let Emberline install and start the local inference server for you when nothing answers at `emberline.endpoint`. Turn this off if you run the server yourself (for example with `uv run emberline-server`); Emberline will then only ever connect to an existing server, never spawn one."
+        },
         "emberline.debounceMs": {
           "type": "number",
           "default": 150,

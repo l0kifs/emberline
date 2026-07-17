@@ -19,6 +19,11 @@ assembly, result caching, and cancelling work that a newer keystroke made
 obsolete. The debounce has to be client-side, because you cannot debounce a
 request that has already been sent.
 
+**Just want to use it?** Install *Emberline* from the VS Code Marketplace. On
+Apple Silicon it bundles the engine and installs the rest on first use — see
+[extension/README.md](extension/README.md). The rest of this file is for
+building, running from source, and the design rationale.
+
 ## Requirements
 
 - macOS on Apple Silicon (Metal). Linux/CUDA should work but is untested.
@@ -134,11 +139,13 @@ Server, env vars prefixed `EMBERLINE__`:
 | `EMBERLINE__N_PREDICT` | `128` | The real latency cap |
 | `EMBERLINE__RING_ENABLED` | `true` | Cross-file context |
 | `EMBERLINE__EXAMPLES_ENABLED` | `true` | Accepted-completion retrieval |
+| `EMBERLINE__IDLE_TIMEOUT_S` | `1800` | Exit after this long with no completion traffic; `0` disables. Lets an editor start the server and never have to stop it. |
 | `EMBERLINE__DATA_DIR` | `~/.emberline` | Everything on disk lives under here |
 
-Extension, under `emberline.*`: `endpoint`, `debounceMs` (default 150 — VS Code
-adds ~50 ms of its own before the provider is even called), `timeoutMs`,
-`disabledLanguages`, `maxLineSuffixChars`, `sendOpenFiles`.
+Extension, under `emberline.*`: `endpoint`, `manageServer` (default true — install
+and start the server automatically; set false to run it yourself), `debounceMs`
+(default 150 — VS Code adds ~50 ms of its own before the provider is even called),
+`timeoutMs`, `disabledLanguages`, `maxLineSuffixChars`, `sendOpenFiles`.
 
 ## Where things are stored
 

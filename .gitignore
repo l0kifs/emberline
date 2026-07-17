@@ -224,5 +224,10 @@ extension/out/
 extension/.vscode-test/
 *.vsix
 
+# llama.cpp staged into the VSIX by scripts/fetch-llama.mjs. A ~23MB build
+# artifact pinned to an upstream release -- reproducible from PROVENANCE.json,
+# so there is nothing to gain by committing it.
+extension/bin/
+
 # --- Emberline ---
 .python-version

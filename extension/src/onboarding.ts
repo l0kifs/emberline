@@ -37,8 +37,8 @@ export class Onboarding {
 	private async prompt(endpoint: string): Promise<void> {
 		this.log.warn(`server unreachable at ${endpoint}; prompting for setup`);
 		const choice = await vscode.window.showWarningMessage(
-			`Emberline can't reach its server at ${endpoint}. Emberline runs completions ` +
-				`on a local server that you start yourself — it isn't bundled with the extension.`,
+			`Emberline can't reach its server at ${endpoint}. ` +
+				`\`emberline.manageServer\` is off, so Emberline won't start one for you.`,
 			'Setup Instructions',
 			'Show Logs',
 			"Don't Show Again",

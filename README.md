@@ -7,29 +7,87 @@ running on your own machine.
 VS Code extension (TypeScript)     debounce, fire, render — and nothing else
         │  HTTP
         ▼
-FastAPI server (Python)            supersede · cache · prompt & context assembly
+Emberline server (TypeScript)      supersede · cache · prompt & context assembly
         │  HTTP  POST /infill
         ▼
 llama-server (llama.cpp)           Qwen2.5-Coder-1.5B-Q8_0 · Metal · KV cache
 ```
 
 The extension is deliberately dumb. Everything latency-sensitive except the
-debounce lives in the Python server, where it is easier to reason about: prompt
+debounce lives in the server, where it is easier to reason about: prompt
 assembly, result caching, and cancelling work that a newer keystroke made
 obsolete. The debounce has to be client-side, because you cannot debounce a
 request that has already been sent.
 
+The server is a **separate process, not part of the extension host**. That is
+load-bearing: each VS Code window gets its own extension host, so an in-process
+engine would give each window its own model lock, and two windows would thrash
+the single KV cache. The server is shared, warm, and bounds its own lifetime
+with an idle timeout.
+
+It ships inside the VSIX as `dist/server.js` and runs on VS Code's own Node
+(`ELECTRON_RUN_AS_NODE`), so there is no runtime to install.
+
 **Just want to use it?** Install *Emberline* from the VS Code Marketplace. On
-Apple Silicon it bundles the engine and installs the rest on first use — see
+Apple Silicon it bundles the engine too — see
 [extension/README.md](extension/README.md). The rest of this file is for
 building, running from source, and the design rationale.
 
 ## Requirements
 
-- macOS on Apple Silicon (Metal). Linux/CUDA should work but is untested.
-- [llama.cpp](https://github.com/ggml-org/llama.cpp): `brew install llama.cpp`
-- [uv](https://docs.astral.sh/uv/), Python 3.12
+- **macOS on Apple Silicon** (Metal), or **Linux with a Vulkan-capable GPU**. Both
+  are tested; see the numbers below. CUDA and ROCm builds exist upstream and
+  should work, but are not exercised here.
+- [llama.cpp](https://github.com/ggml-org/llama.cpp) — `llama-server` on `PATH`,
+  or point `EMBERLINE__LLAMA_BINARY` at one.
 - **Node 22+** (`@vscode/test-cli` requires it), VS Code 1.104+
+
+No Python toolchain: the server is TypeScript and ships with the extension.
+
+### Installing llama.cpp
+
+macOS: `brew install llama.cpp`.
+
+Linux: upstream ships no CUDA build for Ubuntu, but the **Vulkan** build drives
+NVIDIA, AMD and Intel GPUs without a vendor toolchain — no CUDA/ROCm install, and
+it is what the Linux numbers below were measured on.
+
+```bash
+# pick the current tag from https://github.com/ggml-org/llama.cpp/releases
+curl -sL -o llama.tar.gz \
+  https://github.com/ggml-org/llama.cpp/releases/download/b10068/llama-b10068-bin-ubuntu-vulkan-x64.tar.gz
+mkdir -p ~/.local/lib && tar xzf llama.tar.gz && mv llama-b10068 ~/.local/lib/llama.cpp
+ln -sf ~/.local/lib/llama.cpp/llama-server ~/.local/bin/llama-server
+llama-server --list-devices
+```
+
+The binaries carry an `$ORIGIN` runpath, so the symlink resolves its libraries
+correctly and nothing needs to go in a system directory.
+
+### Multi-GPU machines: pin the device
+
+**This one costs real performance and is silent.** llama.cpp's Vulkan backend
+splits layers across *every* device it finds. On a laptop with an integrated GPU
+beside a discrete one, that means part of the model runs on the iGPU:
+
+```
+$ llama-server --list-devices
+  Vulkan0: Intel(R) Graphics (RPL-S)
+  Vulkan1: NVIDIA GeForce RTX 4060 Laptop GPU
+```
+
+Measured on that machine: **49 tok/s split, 80 tok/s pinned to the discrete GPU
+alone.** Pin it with `EMBERLINE__LLAMA_EXTRA_ARGS`, which Emberline passes through
+to llama-server:
+
+```bash
+mkdir -p ~/.config/environment.d
+echo 'EMBERLINE__LLAMA_EXTRA_ARGS=--device Vulkan1' > ~/.config/environment.d/emberline.conf
+# log out and back in, so GUI-launched VS Code inherits it
+```
+
+Re-check the index with `--list-devices` after a driver update; the ordering is
+not guaranteed stable.
 
 `extension/.nvmrc` pins Node 22. With [fnm](https://github.com/Schniz/fnm) or nvm
 installed, `fnm use` / `nvm use` inside `extension/` picks it up. Older Node
@@ -41,13 +99,12 @@ its supported range.
 One-time setup:
 
 ```bash
-cd server && uv sync          # server deps
-cd ../extension && npm install # extension deps
+cd extension && npm install
 ```
 
 Then open the **repo root** in VS Code and press <kbd>F5</kbd>.
 
-That runs the `Run Extension + Server` launch config, which starts the Python
+That runs the `Run Extension + Server` launch config, which starts the
 server (reusing one if it is already running), builds the extension, and opens a
 second VS Code window titled **[Extension Development Host]** with Emberline
 loaded. Open a code file in that window and start typing — ghost text appears
@@ -77,7 +134,7 @@ gone in that window too.
 Prefer separate terminals?
 
 ```bash
-cd server && uv run emberline-server
+cd extension && node esbuild.js && node dist/server.js
 curl -s http://127.0.0.1:8011/health   # {"status":"ok",...}
 ```
 
@@ -86,8 +143,23 @@ config, but it will not start the server for you.
 
 ## Measured performance
 
-Benchmarked on a base **M1, 16GB** (68 GB/s memory bandwidth — the slowest chip
-in llama.cpp's Apple Silicon table), Qwen2.5-Coder-1.5B-Q8_0, ~790 token prefix:
+Two machines, same model (Qwen2.5-Coder-1.5B-Q8_0):
+
+| | base M1, 16GB (Metal) | RTX 4060 Laptop, 8GB (Vulkan) |
+|---|---|---|
+| Completion, warm | ~950 ms | **~435 ms** |
+| Decode | ~33 tok/s | **~80 tok/s** |
+| Result cache hit | ~3 ms | ~3 ms |
+
+The M1 figures are the detailed benchmark below and the ones the design was tuned
+against — it is the slowest chip in llama.cpp's Apple Silicon table, so it is the
+honest floor. The 4060 numbers are a spot measurement of the same request shapes,
+included because they show the architecture is not the bottleneck on faster
+hardware: superseding, the KV cache and the result cache all matter more, not
+less, when generation gets cheap.
+
+Full benchmark, on the base **M1, 16GB** (68 GB/s memory bandwidth), ~790 token
+prefix:
 
 | | |
 |---|---|
@@ -154,10 +226,10 @@ extension itself stores nothing — it is stateless.
 
 ```
 ~/.emberline/
-├── examples.db                 # accepted completions + embeddings (SQLite)
+├── examples.jsonl              # accepted completions, append-only
+├── server.log                  # the server's own log (Emberline: Show Server Log)
 └── cache/
-    ├── huggingface/hub/        # GGUF models (~1.5GB for 1.5B-Q8_0)
-    └── fastembed/              # embedding model (~64MB)
+    └── huggingface/hub/        # GGUF models (~1.5GB for 1.5B-Q8_0)
 ```
 
 Uninstalling is `rm -rf ~/.emberline`; everything regenerates.
@@ -176,23 +248,42 @@ Completion results are cached in memory only, and die with the process.
 
 Two mechanisms, both delivered through `/infill`'s `input_extra`:
 
-**Cross-file ring buffer** (`context/ring.py`) — chunks other open files and ranks
+**Cross-file ring buffer** (`engine/ring.ts`) — chunks other open files and ranks
 them against the cursor context by Jaccard overlap on identifier tokens. Ranking
 runs on every keystroke, so it has to be nearly free; this is why it does not use
 embeddings. Modelled on llama.vim. The extension sends *paths only*; the server
 reads and chunks the files itself.
 
-**Accepted-example retrieval** (`context/examples.py`) — completions you accept are
-embedded (`bge-small-en-v1.5`, via fastembed) and stored in SQLite. Similar past
-completions are retrieved as few-shot context. Scoring is one numpy matmul against
-a resident normalised matrix, with a similarity floor.
+**Accepted-example retrieval** (`engine/examples.ts`) — completions you accept are
+stored in an append-only JSONL file and retrieved as few-shot context when a later
+cursor position looks similar, ranked by the same identifier-token overlap with a
+similarity floor.
+
+This used to be semantic (`bge-small-en-v1.5` embeddings via fastembed, scored as
+a numpy matmul over a resident matrix, in SQLite). It went lexical when the server
+moved from Python to TypeScript: every JS embedding runtime worth using drags in
+per-platform native binaries, which is exactly the packaging problem that move was
+meant to remove. The interface is unchanged, so an ONNX/WASM implementation can
+drop back in behind it.
+
+The loss is smaller than "lexical vs semantic" implies, because code carries its
+meaning in identifiers. Asked to match each TypeScript module here to the Python
+module it was ported from — restructured, resyntaxed, renamed — token overlap picked
+the right counterpart 75% of the time against 11% chance. (That measures the scorer;
+retrieval itself filters by language first, so a cross-language match never actually
+gets returned. It carries over to same-language, different-file retrieval, which is
+the case that does fire.)
 
 ## Tests
 
 ```bash
-cd server && uv run pytest
-cd extension && npm test    # 12 unit + 4 onboarding + 2 end-to-end
+cd extension && npm run test:engine   # server engine, plain Node, no Electron
+cd extension && npm test              # extension + onboarding + end-to-end
 ```
+
+`test:engine` runs outside an extension host: nothing under `src/engine/` may
+import `vscode` (enforced at build time by `esbuild.js`), so those tests need no
+Electron and finish in ~2s.
 
 The end-to-end tests drive the real UI — trigger ghost text, commit it, assert on
 the buffer — and skip themselves when no server is reachable. There is no

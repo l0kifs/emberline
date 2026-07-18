@@ -3,8 +3,11 @@
 # Ships two artifacts per release, following rust-analyzer's model:
 #   - a darwin-arm64 VSIX with llama-server bundled (staged by fetch-llama.mjs)
 #   - an untargeted fallback VSIX with no binary, used by VS Code for every other
-#     platform. On those, emberline.manageServer still installs the Python server
-#     via uv; only llama.cpp must come from PATH (the fallback path).
+#     platform. On those, llama.cpp must come from PATH (the fallback path).
+#
+# Both VSIXes carry the inference server itself (dist/server.js), which runs on
+# VS Code's own Node -- there is nothing to install at runtime. Only llama.cpp
+# differs between the two.
 #
 # Secrets required (repo settings -> Secrets and variables -> Actions):
 #   VSCE_PAT  -- Marketplace PAT scoped to Marketplace: Manage, "all accessible
@@ -37,6 +40,10 @@ jobs:
         run: node scripts/fetch-llama.mjs darwin-arm64
       - name: Package
         run: npx @vscode/vsce package --target darwin-arm64 -o emberline-darwin-arm64.vsix
+      # A VSIX missing dist/server.js or the bundled engine fails only on a
+      # user's machine, so it must not get past CI.
+      - name: Verify VSIX contents
+        run: node scripts/verify-vsix.mjs emberline-darwin-arm64.vsix --expect-llama
       - uses: actions/upload-artifact@v4
         with:
           name: vsix-darwin-arm64
@@ -56,6 +63,8 @@ jobs:
       # No fetch-llama here: the fallback VSIX intentionally ships no binary.
       - name: Package (untargeted fallback)
         run: npx @vscode/vsce package -o emberline-fallback.vsix
+      - name: Verify VSIX contents
+        run: node scripts/verify-vsix.mjs emberline-fallback.vsix
       - uses: actions/upload-artifact@v4
         with:
           name: vsix-fallback

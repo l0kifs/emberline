@@ -16,7 +16,12 @@
  *      makes a second VS Code window share the first window's server instead of
  *      racing it. It mirrors `LlamaServer.start()`, which already reuses a
  *      healthy llama-server rather than spawning a second one.
- *   3. Otherwise install the server from PyPI via uv and spawn it.
+ *   3. Otherwise spawn the bundled sidecar.
+ *
+ * The sidecar ships inside the VSIX as `dist/server.js` and runs on VS Code's own
+ * Node, via `ELECTRON_RUN_AS_NODE`. There is nothing to install: no Python, no
+ * uv, no PyPI download. (`process.execPath` is Electron in the desktop host and a
+ * real node binary in a Remote/WSL host; the variable is inert in the latter.)
  *
  * We deliberately do NOT kill the server on deactivate. It is a shared, warm
  * process: killing it would throw away the KV cache that the whole design exists
@@ -24,24 +29,13 @@
  * reused it. Bounded lifetime is the server's own job, via its idle shutdown.
  */
 
-import { type ChildProcess, execFile, spawn } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { promisify } from 'node:util';
 import * as vscode from 'vscode';
 
 import type { Config } from '../config';
-import { resolveUv, uvToolEnv } from './uv';
-
-const exec = promisify(execFile);
-
-/**
- * The server release this extension build expects. Pinned rather than floating:
- * an extension and a server that disagree about the wire contract is exactly the
- * failure this avoids. CI keeps it in step with server/pyproject.toml.
- */
-const SERVER_VERSION = '0.1.0';
-const SERVER_PACKAGE = 'emberline-server';
+import { loadSettings, logPath } from '../engine/config';
 
 /** First run downloads ~1.6GB of model, and /health cannot answer until it lands. */
 const STARTUP_TIMEOUT_MS = 10 * 60 * 1000;
@@ -57,6 +51,7 @@ export class ServerSetupError extends Error {
 
 export class ServerManager implements vscode.Disposable {
 	private proc: ChildProcess | undefined;
+	private spawnedAt: number | undefined;
 	private inflight: Promise<boolean> | undefined;
 	private declined = false;
 
@@ -71,7 +66,7 @@ export class ServerManager implements vscode.Disposable {
 	 *
 	 * Single-flight: the provider calls this from a failed keystroke, and
 	 * keystrokes arrive faster than a server starts. Without the latch, a burst
-	 * would each try to install and spawn.
+	 * would each try to spawn.
 	 */
 	async ensure(): Promise<boolean> {
 		this.inflight ??= this.run().finally(() => {
@@ -123,9 +118,12 @@ export class ServerManager implements vscode.Disposable {
 	}
 
 	/**
-	 * Ask once, ever. Installing a Python toolchain and downloading gigabytes is
-	 * not something to do behind someone's back, and the Marketplace publisher
-	 * agreement (8(d)) draws the line at what a user "may reasonably expect".
+	 * Ask once, ever.
+	 *
+	 * The server itself now ships in the VSIX, so this is no longer about
+	 * installing a toolchain -- but it still downloads a ~1.6GB model and starts a
+	 * long-lived background process, which is squarely what the Marketplace
+	 * publisher agreement (8(d)) means by "beyond what may reasonably be expected".
 	 */
 	private async consent(): Promise<boolean> {
 		if (this.ctx.globalState.get<boolean>(CONSENT_KEY)) {
@@ -135,7 +133,7 @@ export class ServerManager implements vscode.Disposable {
 		const notNow = 'Not now';
 		const choice = await vscode.window.showInformationMessage(
 			'Emberline runs a code model on your machine. Set it up now? ' +
-				'This downloads a local inference server and a ~1.6GB model. ' +
+				'This downloads a ~1.6GB model and starts a local inference server. ' +
 				'Nothing is sent off your machine.',
 			{ modal: false },
 			setUp,
@@ -153,25 +151,7 @@ export class ServerManager implements vscode.Disposable {
 			{ location: vscode.ProgressLocation.Notification, title: 'Emberline' },
 			async (progress) => {
 				try {
-					const storage = this.ctx.globalStorageUri.fsPath;
-					const env = uvToolEnv(storage);
-
-					progress.report({ message: 'preparing…' });
-					const uv = await resolveUv(storage, this.log, () =>
-						progress.report({ message: 'downloading uv (~23MB)…' }),
-					);
-
-					progress.report({ message: 'installing the inference server…' });
-					const spec = `${SERVER_PACKAGE}==${SERVER_VERSION}`;
-					this.log.info(`installing ${spec} with ${uv}`);
-					await exec(uv, ['tool', 'install', '--quiet', spec], {
-						env: { ...process.env, ...env },
-						timeout: 10 * 60 * 1000,
-					});
-
-					const bin = path.join(env.UV_TOOL_BIN_DIR, SERVER_PACKAGE);
-					this.spawnServer(bin, env);
-
+					this.spawnServer();
 					progress.report({
 						message: 'starting (first run downloads a ~1.6GB model)…',
 					});
@@ -190,13 +170,31 @@ export class ServerManager implements vscode.Disposable {
 		);
 	}
 
-	private spawnServer(bin: string, env: Record<string, string>): void {
-		const llama = this.bundledLlama();
-		const serverEnv: NodeJS.ProcessEnv = {
+	/** The sidecar bundled into this VSIX. */
+	private serverEntry(): string {
+		const p = path.join(this.ctx.extensionUri.fsPath, 'dist', 'server.js');
+		if (!fs.existsSync(p)) {
+			// Only reachable from a broken package. Worth naming, because the spawn
+			// would otherwise fail silently: stdio is ignored, so node's "cannot find
+			// module" goes nowhere and this would look like a hang.
+			throw new ServerSetupError(
+				`this build is missing its inference server (${p}). Reinstall the extension.`,
+			);
+		}
+		return p;
+	}
+
+	private spawnServer(): void {
+		const entry = this.serverEntry();
+		const env: NodeJS.ProcessEnv = {
 			...process.env,
-			...env,
+			// Makes the Electron binary behave as plain Node. Inert when the
+			// extension host is already Node (Remote/WSL/SSH).
+			ELECTRON_RUN_AS_NODE: '1',
 			EMBERLINE__PORT: this.port(),
 		};
+
+		const llama = this.bundledLlama();
 		if (llama) {
 			// The server spawns llama-server itself; it just needs to be told which
 			// one. Absent (fallback VSIX), it falls back to PATH and reports a clear
@@ -209,22 +207,57 @@ export class ServerManager implements vscode.Disposable {
 			} catch (err) {
 				this.log.info(`could not chmod bundled llama-server: ${(err as Error).message}`);
 			}
-			serverEnv.EMBERLINE__LLAMA_BINARY = llama;
+			env.EMBERLINE__LLAMA_BINARY = llama;
 			this.log.info(`using bundled llama-server: ${llama}`);
 		} else {
 			this.log.info('no bundled llama-server in this VSIX; the server will look on PATH');
 		}
 
-		this.log.info(`spawning ${bin}`);
-		this.proc = spawn(bin, [], {
-			env: serverEnv,
+		this.log.info(`spawning ${process.execPath} ${entry}`);
+		this.spawnedAt = Date.now();
+		this.proc = spawn(process.execPath, [entry], {
+			env,
 			// Own process group and fully detached: this process must outlive the
 			// window that happened to start it, because other windows share it.
 			detached: true,
+			// The server writes its own log; see `emberline.showServerLog`.
 			stdio: 'ignore',
 		});
 		this.proc.unref();
 		this.proc.on('exit', (code) => this.log.info(`server process exited with code ${code}`));
+	}
+
+	/**
+	 * The reason the server logged before exiting, if it is from *this* spawn.
+	 *
+	 * The timestamp check is the whole point: a log left by an earlier failed run
+	 * would otherwise be reported as the cause of a later, unrelated one — which is
+	 * worse than the generic message, because it is confidently wrong.
+	 */
+	private startupFailure(): string | undefined {
+		if (this.spawnedAt === undefined) {
+			return undefined;
+		}
+		const marker = 'startup failed:';
+		try {
+			const lines = fs.readFileSync(logPath(loadSettings()), 'utf8').trimEnd().split('\n');
+			for (let i = lines.length - 1; i >= 0; i--) {
+				const line = lines[i];
+				const at = line.indexOf(marker);
+				if (at === -1) {
+					continue;
+				}
+				const stamp = Date.parse(line.slice(0, line.indexOf(' ')));
+				// 2s of slack: the log timestamp is written by the other process.
+				if (Number.isNaN(stamp) || stamp < this.spawnedAt - 2000) {
+					return undefined;
+				}
+				return line.slice(at + marker.length).trim();
+			}
+		} catch {
+			// No log, unreadable, or a data dir we cannot resolve. Fall back.
+		}
+		return undefined;
 	}
 
 	/** Path to the llama-server staged into this VSIX, if this build has one. */
@@ -242,8 +275,16 @@ export class ServerManager implements vscode.Disposable {
 			// A server that died during startup will never answer; fail now with its
 			// exit code rather than sitting on the full timeout.
 			if (this.proc && this.proc.exitCode !== null) {
+				// Prefer the server's own account of what went wrong. "exited with
+				// code 1" is true and useless; the actionable line ("llama-server not
+				// found on PATH...") is sitting in its log, and the overwhelmingly
+				// common first-run failure on any platform without a bundled engine is
+				// exactly that one.
+				const reason = this.startupFailure();
 				throw new ServerSetupError(
-					`the server exited with code ${this.proc.exitCode} during startup`,
+					reason ??
+						`the server exited with code ${this.proc.exitCode} during startup. ` +
+							`See "Emberline: Show Server Log".`,
 				);
 			}
 			if (await this.healthy()) {

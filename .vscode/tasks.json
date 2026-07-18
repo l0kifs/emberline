@@ -57,8 +57,13 @@
 			"type": "shell",
 			// Idempotent: if a server is already healthy, print the ready marker and
 			// exit rather than failing on "address already in use".
-			"command": "curl -sf -o /dev/null http://127.0.0.1:8011/health && echo 'Application startup complete (reusing already-running server)' || uv run emberline-server",
-			"options": { "cwd": "${workspaceFolder}/server" },
+			//
+			// Otherwise wait for dist/server.js and run it. We wait rather than build:
+			// this task runs in parallel with `extension: watch esbuild`, which is
+			// already producing that file, and a second concurrent esbuild writing the
+			// same outputs is a race worth not having.
+			"command": "curl -sf -o /dev/null http://127.0.0.1:8011/health && echo 'Application startup complete (reusing already-running server)' || (until [ -f dist/server.js ]; do sleep 0.2; done && node dist/server.js)",
+			"options": { "cwd": "${workspaceFolder}/extension" },
 			"isBackground": true,
 			"problemMatcher": {
 				"owner": "emberline-server",
@@ -73,7 +78,9 @@
 				],
 				"background": {
 					"activeOnStart": true,
-					"beginsPattern": "Started server process",
+					// Both strings are printed by engine/main.ts. Change either there
+					// and this task hangs on F5.
+					"beginsPattern": "emberline server starting",
 					"endsPattern": "Application startup complete"
 				}
 			},

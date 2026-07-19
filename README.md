@@ -29,7 +29,7 @@ It ships inside the VSIX as `dist/server.js` and runs on VS Code's own Node
 (`ELECTRON_RUN_AS_NODE`), so there is no runtime to install.
 
 **Just want to use it?** Install *Emberline* from the VS Code Marketplace. On
-Apple Silicon it bundles the engine too — see
+Apple Silicon (macOS 15+) it bundles the engine too — see
 [extension/README.md](extension/README.md). The rest of this file is for
 building, running from source, and the design rationale.
 

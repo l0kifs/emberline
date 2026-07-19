@@ -15,7 +15,13 @@
 #                See PUBLISHING.md.
 #
 # The bundled darwin-arm64 build must run on macOS: fetch-llama.mjs verifies the
-# staged binary by executing it, which only works on the target platform.
+# staged binary by executing it, which only works on the target platform. The
+# runner OS is therefore the minimum macOS this build is certified for: the pinned
+# llama.cpp (b10061) links MTLResidencySet, a macOS 15 (Sequoia) Metal symbol, so
+# the runner must be macos-15+. VS Code targets are os-arch only (no OS-version
+# dimension), so every Apple Silicon Mac still receives THIS bundled VSIX -- on
+# macOS 14 the engine fails to load and the user must set manageServer=false and
+# put llama.cpp on PATH. That is why the min-OS bar lives here, not in a target.
 
 name: publish-extension
 
@@ -27,7 +33,7 @@ on:
 
 jobs:
   darwin-arm64:
-    runs-on: macos-14   # Apple Silicon runner -- required to verify the binary
+    runs-on: macos-15   # Apple Silicon runner; macos-15 = min macOS for b10061 (see header)
     defaults:
       run:
         working-directory: extension

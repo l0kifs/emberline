@@ -26,14 +26,15 @@ hit.
 
 ## Requirements
 
-- **macOS on Apple Silicon** (Metal), or **Linux with a Vulkan-capable GPU**
-  (NVIDIA, AMD or Intel). Both are tested.
+- **macOS 15+ (Sequoia) on Apple Silicon** (Metal), or **Linux with a Vulkan-capable
+  GPU** (NVIDIA, AMD or Intel). Both are tested.
 - VS Code 1.104+
 - ~2 GB of disk for the model, downloaded on first run
 - An internet connection for that first-run download
 
-Nothing else on Apple Silicon: the inference engine is bundled and the server
-ships inside the extension. On other platforms you also need
+Nothing else on Apple Silicon (macOS 15+): the inference engine is bundled and the
+server ships inside the extension. On other platforms, and on macOS 14 or older
+(which cannot load the bundled engine), you also need
 [llama.cpp](https://github.com/ggml-org/llama.cpp) — see below.
 
 ## Setup

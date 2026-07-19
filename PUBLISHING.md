@@ -60,10 +60,13 @@ through `npx`.
 2. **Personal Access Token.** In Azure DevOps → *User settings* → *Personal access
    tokens* → *New Token*:
 
-   - **Organization: "All accessible organizations"** — not a specific org. This
-     is the single most common cause of a `401` at publish time, and the error
-     does not explain itself.
-   - **Scopes: "Custom defined" → Marketplace → Manage.**
+   - **Organization: select your one org.** Azure DevOps retired the old "All
+     accessible organizations" choice — you must now pick a single organization,
+     and that is fine: the Marketplace scope authorizes against the *publisher*,
+     not the org, so any org you own works. The scope below is what matters.
+   - **Scopes: "Custom defined" → Marketplace → Manage.** A token missing this is
+     the single most common cause of a `401` at publish time, and the error does
+     not explain itself.
    - Copy the token immediately; it is shown once.
 
 3. **Create the publisher** at
@@ -186,7 +189,7 @@ VSCE_PAT="$MARKETPLACE_TOKEN" npx @vscode/vsce publish
 
 | Symptom | Cause |
 |---|---|
-| `401 Unauthorized` | PAT not scoped to **all** organizations, or missing Marketplace → Manage. Re-create it; you cannot edit the org scope afterwards. |
+| `401 Unauthorized` | PAT missing **Marketplace → Manage**. The org selection no longer matters (Azure retired "All accessible organizations"); the Marketplace scope is what authorizes publishing. Re-create the token — scopes cannot be edited afterwards. |
 | `ERROR Failed request: (401)` right after `login` | PAT expired. They are time-limited by default. |
 | `Missing publisher name` | `publisher` absent from `package.json`, or it does not match the created publisher. |
 | Extension published but does nothing | Expected without a server — that is the design. Check the endpoint and the *Emberline* output channel. |

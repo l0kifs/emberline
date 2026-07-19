@@ -67,6 +67,12 @@
           "scope": "machine-overridable",
           "description": "Emberline inference server base URL."
         },
+        "emberline.manageServer": {
+          "type": "boolean",
+          "default": true,
+          "scope": "machine-overridable",
+          "markdownDescription": "Let Emberline start its bundled local inference server for you when nothing answers at `emberline.endpoint`. The server ships inside the extension and runs on VS Code's own Node, so there is nothing to install. Turn this off if you run the server yourself (for example `node <extension-dir>/dist/server.js`); Emberline will then only ever connect to an existing server, never spawn one."
+        },
         "emberline.debounceMs": {
           "type": "number",
           "default": 150,
@@ -89,12 +95,10 @@
             "type": "string"
           },
           "default": [
-            "plaintext",
-            "markdown",
             "scminput"
           ],
           "scope": "window",
-          "description": "Language ids for which completions are never requested."
+          "markdownDescription": "Language ids for which completions are never requested. Only `scminput` (the SCM commit message box) is excluded by default.\n\nThe model is a code model, so prose completions in `markdown` or `plaintext` are noticeably weaker than code ones and can run on repetitively — but Markdown fenced code blocks work well, and a new unsaved file is `plaintext` until you pick a language. Add them here if the prose suggestions bother you."
         },
         "emberline.maxPrefixChars": {
           "type": "number",
@@ -133,6 +137,10 @@
       {
         "command": "emberline.showLogs",
         "title": "Emberline: Show Logs"
+      },
+      {
+        "command": "emberline.showServerLog",
+        "title": "Emberline: Show Server Log"
       }
     ]
   },
@@ -146,7 +154,8 @@
     "compile-tests": "tsc -p . --outDir out",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "test:engine": "npm run compile-tests && node --test \"out/test/engine/**/*.test.js\""
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

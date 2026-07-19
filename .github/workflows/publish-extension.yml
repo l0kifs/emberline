@@ -1,0 +1,89 @@
+# Builds and publishes the VS Code extension on a version tag.
+#
+# Ships two artifacts per release, following rust-analyzer's model:
+#   - a darwin-arm64 VSIX with llama-server bundled (staged by fetch-llama.mjs)
+#   - an untargeted fallback VSIX with no binary, used by VS Code for every other
+#     platform. On those, llama.cpp must come from PATH (the fallback path).
+#
+# Both VSIXes carry the inference server itself (dist/server.js), which runs on
+# VS Code's own Node -- there is nothing to install at runtime. Only llama.cpp
+# differs between the two.
+#
+# Secrets required (repo settings -> Secrets and variables -> Actions):
+#   VSCE_PAT  -- Marketplace PAT scoped to Marketplace: Manage, "all accessible
+#                organizations". See PUBLISHING.md.
+#
+# The bundled darwin-arm64 build must run on macOS: fetch-llama.mjs verifies the
+# staged binary by executing it, which only works on the target platform.
+
+name: publish-extension
+
+on:
+  push:
+    tags:
+      - 'ext-v*'   # e.g. ext-v0.1.0
+  workflow_dispatch:
+
+jobs:
+  darwin-arm64:
+    runs-on: macos-14   # Apple Silicon runner -- required to verify the binary
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Stage llama-server for darwin-arm64
+        run: node scripts/fetch-llama.mjs darwin-arm64
+      - name: Package
+        run: npx @vscode/vsce package --target darwin-arm64 -o emberline-darwin-arm64.vsix
+      # A VSIX missing dist/server.js or the bundled engine fails only on a
+      # user's machine, so it must not get past CI.
+      - name: Verify VSIX contents
+        run: node scripts/verify-vsix.mjs emberline-darwin-arm64.vsix --expect-llama
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix-darwin-arm64
+          path: extension/emberline-darwin-arm64.vsix
+
+  fallback:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      # No fetch-llama here: the fallback VSIX intentionally ships no binary.
+      - name: Package (untargeted fallback)
+        run: npx @vscode/vsce package -o emberline-fallback.vsix
+      - name: Verify VSIX contents
+        run: node scripts/verify-vsix.mjs emberline-fallback.vsix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix-fallback
+          path: extension/emberline-fallback.vsix
+
+  publish:
+    needs: [darwin-arm64, fallback]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/ext-v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      # vsce publishes multiple targets in one call; the untargeted package is
+      # the fallback for platforms without a specific build.
+      - name: Publish all VSIX to the Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          npx @vscode/vsce publish \
+            --packagePath dist/vsix-darwin-arm64/emberline-darwin-arm64.vsix \
+                          dist/vsix-fallback/emberline-fallback.vsix

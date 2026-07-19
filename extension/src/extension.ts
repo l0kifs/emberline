@@ -2,9 +2,11 @@ import * as vscode from 'vscode';
 
 import { EmberlineClient } from './client/http';
 import { Config } from './config';
+import { loadSettings, logPath } from './engine/config';
 import { createLogger } from './logging';
 import { Onboarding } from './onboarding';
 import { ACCEPTED_COMMAND, EmberlineProvider } from './provider';
+import { ServerManager } from './server/manage';
 import { StatusBar } from './status';
 
 /**
@@ -40,7 +42,13 @@ export function activate(context: vscode.ExtensionContext): void {
 	// about the user, not about one folder.
 	const onboarding = new Onboarding(context.globalState, log);
 
-	const provider = new EmberlineProvider(client, cfg, log, status, onboarding);
+	// Lifecycle only. Constructed here but not exercised until the first keystroke
+	// finds the server unreachable -- activate must stay cheap (onStartupFinished
+	// fires for every user), so nothing is installed or spawned at startup.
+	const server = new ServerManager(context, cfg, log);
+	context.subscriptions.push(server);
+
+	const provider = new EmberlineProvider(client, cfg, log, status, onboarding, server);
 
 	refreshStatus();
 	context.subscriptions.push(
@@ -78,6 +86,24 @@ export function activate(context: vscode.ExtensionContext): void {
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('emberline.showLogs', () => log.show()),
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('emberline.showServerLog', async () => {
+			// The sidecar is spawned detached with stdio ignored, so its own log file
+			// is the only record of a startup failure. Resolved through the engine's
+			// own config so EMBERLINE__DATA_DIR is honoured in both processes -- the
+			// spawn inherits this environment.
+			const file = logPath(loadSettings());
+			try {
+				const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+				await vscode.window.showTextDocument(doc, { preview: false });
+			} catch {
+				void vscode.window.showInformationMessage(
+					`No Emberline server log at ${file} — the server has not run yet.`,
+				);
+			}
+		}),
 	);
 
 	context.subscriptions.push(

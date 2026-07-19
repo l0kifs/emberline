@@ -5,6 +5,7 @@ import { extractContext, shouldSuppressMidLine } from './completion/context';
 import { Debouncer } from './completion/debounce';
 import { Config } from './config';
 import { Onboarding } from './onboarding';
+import { ServerManager } from './server/manage';
 import { StatusBar } from './status';
 
 export const ACCEPTED_COMMAND = 'emberline.accepted';
@@ -25,6 +26,7 @@ export class EmberlineProvider implements vscode.InlineCompletionItemProvider {
 		private readonly log: vscode.LogOutputChannel,
 		private readonly status: StatusBar,
 		private readonly onboarding: Onboarding,
+		private readonly server: ServerManager,
 	) {}
 
 	async provideInlineCompletionItems(
@@ -120,10 +122,18 @@ export class EmberlineProvider implements vscode.InlineCompletionItemProvider {
 				return undefined;
 			}
 			if (err instanceof ServerUnreachableError) {
-				// Expected until the user starts a server, so it gets a pointer to the
-				// setup docs rather than a raw fetch message.
+				// Expected until a server is up. When Emberline manages the server,
+				// this kicks off setup (consent -> install -> spawn) in the
+				// background; the fire-and-forget is deliberate, since provisioning can
+				// take minutes and this keystroke must not block on it. Later keystrokes
+				// start succeeding once the server answers. When the user runs their own
+				// server (manageServer=false), fall back to the manual setup pointer.
 				this.status.set('error', 'server unreachable — no completions');
-				this.onboarding.serverUnreachable(err.endpoint);
+				if (this.cfg.manageServer) {
+					void this.server.ensure();
+				} else {
+					this.onboarding.serverUnreachable(err.endpoint);
+				}
 				return undefined;
 			}
 			const message = err instanceof Error ? err.message : String(err);

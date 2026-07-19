@@ -41,6 +41,7 @@ export class Config implements vscode.Disposable {
 	readonly onDidChange = this.onChange.event;
 
 	endpoint = 'http://127.0.0.1:8011';
+	manageServer = true;
 	debounceMs = 150;
 	timeoutMs = 5000;
 	disabledLanguages: string[] = [];
@@ -62,6 +63,7 @@ export class Config implements vscode.Disposable {
 	private reload(): void {
 		const c = vscode.workspace.getConfiguration('emberline');
 		this.endpoint = c.get('endpoint', 'http://127.0.0.1:8011');
+		this.manageServer = c.get('manageServer', true);
 		this.debounceMs = c.get('debounceMs', 150);
 		this.timeoutMs = c.get('timeoutMs', 5000);
 		this.disabledLanguages = c.get('disabledLanguages', []);

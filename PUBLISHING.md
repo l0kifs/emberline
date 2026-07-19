@@ -20,12 +20,34 @@ separate, editable field, so set it to whatever reads best ("Emberline" or your
 own name) at registration. Users see `displayName` from package.json
 ("Emberline") in the sidebar regardless.
 
-**What ships is only the client.** The VSIX is ~17 KB: `dist/extension.js` plus
-README, CHANGELOG, LICENSE, and the icon. The Python server, llama.cpp and the
-model are *not* bundled and are not distributed through the Marketplace — users
-install them from the repo. The extension's README leads with this, and
-`onboarding.ts` prompts anyone whose endpoint is dead. If that ever changes, this
-document changes with it.
+**Two VSIXes ship per release**, following rust-analyzer's model:
+
+- **`darwin-arm64`** (~9.5 MB): `dist/extension.js` + `dist/server.js` plus the
+  `llama-server` engine and its dylibs, staged into `bin/llama/` by
+  [extension/scripts/fetch-llama.mjs](extension/scripts/fetch-llama.mjs). This is
+  the zero-setup build — the user installs nothing.
+- **untargeted fallback** (~30 KB): no binary. VS Code serves it on every other
+  platform, where the user provides `llama.cpp` themselves.
+
+**Both carry the inference server** (`dist/server.js`), which runs on VS Code's own
+Node via `ELECTRON_RUN_AS_NODE`. Nothing is installed on the user's machine at
+runtime — no Python, no uv, no PyPI. Only the model downloads, from Hugging Face on
+first run. So what reaches the Marketplace is the client and the server, plus the
+inference engine on Apple Silicon — everything but the model.
+
+That means **one publish channel and one version number**. The extension and the
+server can no longer disagree about the wire contract, which is what the old
+`SERVER_VERSION` pin existed to fake.
+
+Releases are cut by a tag-triggered GitHub Actions workflow, not by hand:
+[.github/workflows/publish-extension.yml](.github/workflows/publish-extension.yml)
+(tag `ext-v*` → both VSIXes to the Marketplace). It runs
+[extension/scripts/verify-vsix.mjs](extension/scripts/verify-vsix.mjs) after
+packaging, which fails the build if `dist/server.js` — or, for the targeted build,
+`bin/llama/llama-server` — is not actually inside the zip. Both omissions fail only
+on a user's machine. The manual steps below still apply for a local dry run or a
+broken-PAT fallback. If the bundling model ever changes, this document changes with
+it.
 
 ## One-time setup
 
@@ -38,10 +60,13 @@ through `npx`.
 2. **Personal Access Token.** In Azure DevOps → *User settings* → *Personal access
    tokens* → *New Token*:
 
-   - **Organization: "All accessible organizations"** — not a specific org. This
-     is the single most common cause of a `401` at publish time, and the error
-     does not explain itself.
-   - **Scopes: "Custom defined" → Marketplace → Manage.**
+   - **Organization: select your one org.** Azure DevOps retired the old "All
+     accessible organizations" choice — you must now pick a single organization,
+     and that is fine: the Marketplace scope authorizes against the *publisher*,
+     not the org, so any org you own works. The scope below is what matters.
+   - **Scopes: "Custom defined" → Marketplace → Manage.** A token missing this is
+     the single most common cause of a `401` at publish time, and the error does
+     not explain itself.
    - Copy the token immediately; it is shown once.
 
 3. **Create the publisher** at
@@ -62,7 +87,7 @@ through `npx`.
 Run from `extension/`.
 
 ```bash
-node esbuild.js && npm run compile-tests && npm test
+node esbuild.js && npm run compile-tests && npm test && npm run test:engine
 ```
 
 `node esbuild.js` is not optional. The test host loads the extension from
@@ -70,10 +95,10 @@ node esbuild.js && npm run compile-tests && npm test
 the previous bundle against the new tests. See the testing notes in
 [CLAUDE.md](CLAUDE.md).
 
-- [ ] **Start the server first** (`cd server && uv run emberline-server`). The two
-      end-to-end tests skip themselves when nothing answers `/health`, so a green
-      run without a server has not exercised completion at all.
-- [ ] `uv run pytest` in `server/` passes.
+- [ ] **Start the server first** (`node dist/server.js`). The two end-to-end tests
+      skip themselves when nothing answers `/health`, so a green run without a
+      server has not exercised completion at all.
+- [ ] `npm run test:engine` passes (the server's own suite; runs without Electron).
 - [ ] [extension/CHANGELOG.md](extension/CHANGELOG.md) has an entry for this version.
 - [ ] [extension/README.md](extension/README.md) is accurate — it *is* the
       Marketplace landing page, and its relative links resolve against the
@@ -82,19 +107,29 @@ the previous bundle against the new tests. See the testing notes in
 - [ ] `npx @vscode/vsce package` reports **no warnings**. A missing `repository`
       or `LICENSE` warning means something regressed.
 
-Inspect what you are about to ship:
+Inspect what you are about to ship. Stage the engine first for the targeted
+build — without it you get a `darwin-arm64` VSIX with no binary, which fails only
+on a user's machine:
 
 ```bash
-npx @vscode/vsce ls          # files that will be included
-npx @vscode/vsce package     # writes emberline-<version>.vsix
+node scripts/fetch-llama.mjs darwin-arm64          # stages bin/llama/ (~22 MB)
+npx @vscode/vsce ls                                # files that will be included
+npx @vscode/vsce package --target darwin-arm64     # writes the bundled VSIX
+npx @vscode/vsce package                           # untargeted fallback, no binary
+
+node scripts/verify-vsix.mjs emberline-darwin-arm64.vsix --expect-llama
+node scripts/verify-vsix.mjs emberline-fallback.vsix
 ```
+
+`verify-vsix.mjs` is what CI runs; running it locally catches the same two
+ship-blocking omissions before you burn a version number.
 
 Install the VSIX locally before publishing — this is the only way to see what a
 real user gets, including the first-run prompt:
 
 ```bash
 code --install-extension emberline-0.1.0.vsix
-# then: quit the server and start typing — the setup prompt should appear
+# then: quit any running server and start typing — the setup prompt should appear
 code --uninstall-extension l0kifs.emberline
 ```
 
@@ -154,7 +189,7 @@ VSCE_PAT="$MARKETPLACE_TOKEN" npx @vscode/vsce publish
 
 | Symptom | Cause |
 |---|---|
-| `401 Unauthorized` | PAT not scoped to **all** organizations, or missing Marketplace → Manage. Re-create it; you cannot edit the org scope afterwards. |
+| `401 Unauthorized` | PAT missing **Marketplace → Manage**. The org selection no longer matters (Azure retired "All accessible organizations"); the Marketplace scope is what authorizes publishing. Re-create the token — scopes cannot be edited afterwards. |
 | `ERROR Failed request: (401)` right after `login` | PAT expired. They are time-limited by default. |
 | `Missing publisher name` | `publisher` absent from `package.json`, or it does not match the created publisher. |
 | Extension published but does nothing | Expected without a server — that is the design. Check the endpoint and the *Emberline* output channel. |

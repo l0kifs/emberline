@@ -138,14 +138,16 @@ suite('first-run onboarding', function () {
 
 	const flush = () => new Promise((r) => setTimeout(r, 0));
 
-	test('names the endpoint and says the server is not bundled', async () => {
+	test('names the endpoint and why nothing was started', async () => {
 		new Onboarding(new FakeMemento(), log).serverUnreachable(DEAD);
 		await flush();
 		assert.strictEqual(seen.length, 1, `expected one prompt, saw ${seen.length}`);
 		assert.ok(seen[0].includes(DEAD), `prompt should name the endpoint: ${seen[0]}`);
+		// The server ships in the VSIX now, so the only reason to be here is that
+		// the user turned managed mode off; the prompt has to say so.
 		assert.ok(
-			/isn't bundled with the extension/.test(seen[0]),
-			`prompt should explain the server is separate: ${seen[0]}`,
+			/manageServer/.test(seen[0]),
+			`prompt should explain why nothing was started: ${seen[0]}`,
 		);
 	});
 
@@ -234,17 +236,30 @@ suite('toggle', function () {
 		assert.strictEqual(emberline().get('enabled'), true, 'toggle should persist on again');
 	});
 
-	test('a disabled language stays disabled and the provider offers nothing', async () => {
-		const doc = await vscode.workspace.openTextDocument({
-			language: 'markdown',
-			content: '# notes\n\n',
-		});
-		const editor = await vscode.window.showTextDocument(doc);
-		editor.selection = new vscode.Selection(
-			new vscode.Position(2, 0),
-			new vscode.Position(2, 0),
-		);
-		assert.strictEqual(await triggerAndCommit(editor, 1500), '');
+	test('a language in disabledLanguages gets no completions', async () => {
+		// Sets the blocklist explicitly rather than leaning on whatever the shipped
+		// default happens to be. The earlier version asserted markdown produced
+		// nothing, which quietly tested the default value instead of the mechanism --
+		// so changing that default broke a test that was not about defaults at all.
+		const cfg = vscode.workspace.getConfiguration('emberline');
+		await cfg.update('disabledLanguages', ['markdown'], vscode.ConfigurationTarget.Global);
+		try {
+			// The provider reads Config, which refreshes on the change event.
+			await sleep(250);
+			const doc = await vscode.workspace.openTextDocument({
+				language: 'markdown',
+				content: '# notes\n\n',
+			});
+			const editor = await vscode.window.showTextDocument(doc);
+			editor.selection = new vscode.Selection(
+				new vscode.Position(2, 0),
+				new vscode.Position(2, 0),
+			);
+			assert.strictEqual(await triggerAndCommit(editor, 1500), '');
+		} finally {
+			await cfg.update('disabledLanguages', undefined, vscode.ConfigurationTarget.Global);
+			await sleep(250);
+		}
 	});
 });
 
@@ -285,6 +300,45 @@ suite('emberline end-to-end', function () {
 			/sqrt|\*\*|return/.test(inserted),
 			`expected distance-like code, got: ${inserted}`,
 		);
+	});
+
+	test('completes in an unsaved buffer', async () => {
+		// The bug this guards: a new untitled file is `plaintext` until you pick a
+		// language, so a `disabledLanguages` default containing `plaintext` made
+		// "completions do not work in unsaved files" look like a separate bug about
+		// untitled buffers. It was the language blocklist both times.
+		const doc = await vscode.workspace.openTextDocument({
+			language: 'plaintext',
+			content: 'def parse_timestamp(value):\n    ',
+		});
+		const editor = await vscode.window.showTextDocument(doc);
+		assert.strictEqual(doc.uri.scheme, 'untitled', 'this must be an unsaved buffer');
+		editor.selection = new vscode.Selection(
+			new vscode.Position(1, 4),
+			new vscode.Position(1, 4),
+		);
+
+		const inserted = await triggerAndCommit(editor);
+		console.log(`  inserted (untitled/plaintext): ${JSON.stringify(inserted.slice(0, 80))}`);
+		assert.ok(inserted.length > 0, 'no ghost text in an unsaved plaintext buffer');
+	});
+
+	test('completes inside a markdown fenced code block', async () => {
+		// Markdown is enabled by default because of exactly this: prose suggestions
+		// are weak, but fenced code is the same job the model is good at.
+		const doc = await vscode.workspace.openTextDocument({
+			language: 'markdown',
+			content: '# Notes\n\n```python\nimport math\n\ndef hypotenuse(a, b):\n    ',
+		});
+		const editor = await vscode.window.showTextDocument(doc);
+		editor.selection = new vscode.Selection(
+			new vscode.Position(6, 4),
+			new vscode.Position(6, 4),
+		);
+
+		const inserted = await triggerAndCommit(editor);
+		console.log(`  inserted (markdown code block): ${JSON.stringify(inserted.slice(0, 80))}`);
+		assert.ok(inserted.length > 0, 'no ghost text inside a fenced code block');
 	});
 
 	test('offers nothing when emberline.enabled is false', async () => {

@@ -22,6 +22,18 @@ function exampleSource(hits: Example[]): ExampleSource {
 	return { search: async () => hits };
 }
 
+/** Boundary-value helper: build with only the clamp settings that matter. */
+async function clamp(over: Partial<Settings>, prefix: string, suffix: string) {
+	const { req } = await new Assembler(settings(over), noDeps).build({
+		prefix,
+		suffix,
+		languageId: 'typescript',
+		path: '/tmp/x.ts',
+		openPaths: [],
+	});
+	return req;
+}
+
 describe('assembler', () => {
 	it('keeps the prefix tail and the suffix head', () => {
 		const a = new Assembler(settings({ maxPrefixChars: 10, maxSuffixChars: 5 }), noDeps);
@@ -110,5 +122,79 @@ describe('assembler', () => {
 		});
 		assert.equal(req.n_predict, 7);
 		assert.equal(req.temperature, 0.42);
+	});
+
+	it('passes a prefix of exactly the limit through untouched', async () => {
+		const req = await clamp({ maxPrefixChars: 4 }, 'abcd', '');
+		assert.equal(req.prefix, 'abcd');
+	});
+
+	it('truncates a prefix one char over the limit down to its tail', async () => {
+		// The tail is the half that carries signal; a head-keeping clamp would hand
+		// the model the text furthest from the cursor.
+		const req = await clamp({ maxPrefixChars: 4 }, 'abcde', '');
+		assert.equal(req.prefix, 'bcde');
+	});
+
+	it('leaves a prefix one char under the limit untouched', async () => {
+		const req = await clamp({ maxPrefixChars: 4 }, 'abc', '');
+		assert.equal(req.prefix, 'abc');
+	});
+
+	it('clamps the prefix to nothing at a limit of zero', async () => {
+		// The bug this guards: the clamp was `slice(-maxPrefixChars)`, and -0 === 0,
+		// so a limit of 0 returned the *entire* prefix instead of none of it.
+		const req = await clamp({ maxPrefixChars: 0 }, 'abcd', '');
+		assert.equal(req.prefix, '');
+	});
+
+	it('keeps exactly the last character at a prefix limit of one', async () => {
+		const req = await clamp({ maxPrefixChars: 1 }, 'abcd', '');
+		assert.equal(req.prefix, 'd');
+	});
+
+	it('clamps a negative prefix limit to nothing rather than keeping the head', async () => {
+		// Same `slice(-n)` bug from the other side: a negative limit sliced from the
+		// front, inverting the clamp into a head-keeping one. The prefix has to be
+		// longer than the limit for the two to differ -- with a 4-char prefix the old
+		// `slice(5)` also yielded '', and this test passed against the bug.
+		const req = await clamp({ maxPrefixChars: -5 }, 'abcdefghij', '');
+		assert.equal(req.prefix, '');
+	});
+
+	it('passes a suffix of exactly the limit through untouched', async () => {
+		const req = await clamp({ maxSuffixChars: 4 }, '', 'abcd');
+		assert.equal(req.suffix, 'abcd');
+	});
+
+	it('truncates a suffix one char over the limit down to its head', async () => {
+		const req = await clamp({ maxSuffixChars: 4 }, '', 'abcde');
+		assert.equal(req.suffix, 'abcd');
+	});
+
+	it('leaves a suffix one char under the limit untouched', async () => {
+		const req = await clamp({ maxSuffixChars: 4 }, '', 'abc');
+		assert.equal(req.suffix, 'abc');
+	});
+
+	it('clamps the suffix to nothing at a limit of zero', async () => {
+		const req = await clamp({ maxSuffixChars: 0 }, '', 'abcd');
+		assert.equal(req.suffix, '');
+	});
+
+	it('accepts empty prefix and suffix', async () => {
+		const req = await clamp({ maxPrefixChars: 10, maxSuffixChars: 10 }, '', '');
+		assert.equal(req.prefix, '');
+		assert.equal(req.suffix, '');
+	});
+
+	it('truncates mid surrogate pair without throwing', async () => {
+		// The clamp counts UTF-16 code units, so a boundary landing inside an astral
+		// pair yields a lone surrogate rather than dropping or duplicating the char.
+		// That is deliberate: contextKey hashes UTF-16LE precisely so lone surrogates
+		// stay distinguishable instead of collapsing to U+FFFD.
+		const req = await clamp({ maxPrefixChars: 2 }, '😀b', '');
+		assert.equal(req.prefix.length, 2);
+		assert.equal(req.prefix, '\ude00b');
 	});
 });

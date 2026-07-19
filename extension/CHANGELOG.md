@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.1.1] - 2026-07-20
+
+Input-validation and edge-case hardening, driven by a systematic test pass
+(engine suite 95 → 299 tests). No new features; behavior changes are confined to
+rejecting previously-accepted malformed input.
+
+Fixed:
+
+- Server configuration is validated at startup. Numeric settings accept only
+  decimal values within a sensible per-field range, so a typo now fails loudly
+  and names the variable instead of surfacing later as an opaque bind error. In
+  particular, `EMBERLINE__RING_CHUNK_LINES=0` used to wedge the server in an
+  infinite loop; it is now rejected. Empty values for path/host settings are
+  rejected rather than silently clobbering a working default.
+- Oversized completion requests return a proper error response instead of
+  dropping the connection.
+- A prefix, suffix, or example-store limit of `0` now clamps to nothing;
+  previously a limit of `0` disabled the clamp entirely and sent everything.
+- Long duplicated tails are fully trimmed from completions — the de-duplication
+  scan no longer stops at 200 characters, which had let longer overlaps render
+  as visibly doubled code.
+- Completion routes tolerate a trailing slash or query string.
+- Cross-file context skips a file opened in more than one editor group instead
+  of spending two context slots on identical text.
+- Requests with an empty document id are rejected, keeping per-document
+  superseding from collapsing every document into one scope.
+
 ## [0.1.0] - 2026-07-17
 
 First release.

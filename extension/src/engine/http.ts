@@ -62,16 +62,31 @@ function readBody(req: http.IncomingMessage): Promise<unknown> {
 	return new Promise((resolve, reject) => {
 		const chunks: Buffer[] = [];
 		let size = 0;
+		let overflowed = false;
 		req.on('data', (c: Buffer) => {
+			if (overflowed) {
+				return;
+			}
 			size += c.length;
 			if (size > MAX_BODY_BYTES) {
+				// Stop buffering, but keep draining rather than `req.destroy()`ing:
+				// destroying the request takes the socket -- and with it the response --
+				// down before the error envelope can be written, so the client saw an
+				// ECONNRESET instead of a 422. Discarding chunks bounds memory just as
+				// well, and the reply survives.
+				overflowed = true;
 				reject(new InvalidRequestError('request body too large'));
-				req.destroy();
 				return;
 			}
 			chunks.push(c);
 		});
 		req.on('end', () => {
+			// Already answered with a 422. Falling through would concat, decode and
+			// attempt to parse the ~8MB retained before the overflow -- wasted on a
+			// settled promise, and a free amplifier for anyone sending oversized bodies.
+			if (overflowed) {
+				return;
+			}
 			const raw = Buffer.concat(chunks).toString('utf8');
 			try {
 				resolve(JSON.parse(raw));
@@ -223,14 +238,19 @@ async function handleHealth(ctx: EngineContext, res: http.ServerResponse): Promi
 
 export function createServer(ctx: EngineContext): http.Server {
 	const server = http.createServer((req, res) => {
+		// `req.url` carries the query string and any trailing slash, so comparing it
+		// literally sent `/health?x=1` and `/health/` to the 404 -- a trap for any
+		// prober or proxy that appends a cache-buster. Match on the bare path.
+		const path = (req.url ?? '').split('?', 1)[0].replace(/\/+$/, '') || '/';
+
 		const route = async () => {
-			if (req.method === 'POST' && req.url === '/v1/complete') {
+			if (req.method === 'POST' && path === '/v1/complete') {
 				return handleComplete(ctx, req, res);
 			}
-			if (req.method === 'POST' && req.url === '/v1/accept') {
+			if (req.method === 'POST' && path === '/v1/accept') {
 				return handleAccept(ctx, req, res);
 			}
-			if (req.method === 'GET' && req.url === '/health') {
+			if (req.method === 'GET' && path === '/health') {
 				return handleHealth(ctx, res);
 			}
 			sendJson(res, 404, { detail: 'not found' });

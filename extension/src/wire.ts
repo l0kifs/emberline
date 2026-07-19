@@ -91,16 +91,42 @@ function asRecord(body: unknown): Record<string, unknown> {
 	return body as Record<string, unknown>;
 }
 
+/**
+ * Read an own property only. `JSON.parse` produces solely own properties, so over
+ * network input this is equivalent to `obj[field]` -- but reading through the
+ * prototype chain would let an inherited value satisfy a required field if this
+ * parser were ever fed an object built another way. Cheap to close now.
+ */
+function own(obj: Record<string, unknown>, field: string): unknown {
+	return Object.hasOwn(obj, field) ? obj[field] : undefined;
+}
+
 function requiredString(obj: Record<string, unknown>, field: string): string {
-	const v = obj[field];
+	const v = own(obj, field);
 	if (typeof v !== 'string') {
 		throw new InvalidRequestError(`${field} is required and must be a string`);
 	}
 	return v;
 }
 
+/**
+ * Like `requiredString`, but `''` is also rejected. Only `session_id` uses this:
+ * it is the supersede scope, and an empty one collapses every document into a
+ * single scope, which is exactly the cross-document abort per-session superseding
+ * exists to prevent. A real client always sends the document URI. Empty `prefix`
+ * stays legal -- the cursor at offset 0 is an empty prefix -- so this is not a
+ * blanket non-empty rule.
+ */
+function requiredNonEmptyString(obj: Record<string, unknown>, field: string): string {
+	const v = requiredString(obj, field);
+	if (v === '') {
+		throw new InvalidRequestError(`${field} must not be empty`);
+	}
+	return v;
+}
+
 function optionalString(obj: Record<string, unknown>, field: string): string {
-	const v = obj[field];
+	const v = own(obj, field);
 	if (v === undefined || v === null) {
 		return '';
 	}
@@ -111,7 +137,7 @@ function optionalString(obj: Record<string, unknown>, field: string): string {
 }
 
 function optionalStringArray(obj: Record<string, unknown>, field: string): string[] {
-	const v = obj[field];
+	const v = own(obj, field);
 	if (v === undefined || v === null) {
 		return [];
 	}
@@ -124,7 +150,7 @@ function optionalStringArray(obj: Record<string, unknown>, field: string): strin
 export function parseCompleteRequest(body: unknown): CompleteRequest {
 	const obj = asRecord(body);
 	return {
-		session_id: requiredString(obj, 'session_id'),
+		session_id: requiredNonEmptyString(obj, 'session_id'),
 		prefix: requiredString(obj, 'prefix'),
 		suffix: optionalString(obj, 'suffix'),
 		language_id: optionalString(obj, 'language_id'),

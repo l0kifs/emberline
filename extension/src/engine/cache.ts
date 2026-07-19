@@ -64,6 +64,12 @@ export class CompletionCache {
 	}
 
 	put(key: string, value: string): void {
+		// A non-positive capacity means caching off. Without this, `max: 0` still
+		// held one entry: the `size >= max` eviction below runs before the insert, so
+		// on an empty map there is nothing to evict and the entry lands anyway.
+		if (this.max <= 0) {
+			return;
+		}
 		if (this.data.has(key)) {
 			this.data.delete(key);
 		} else if (this.data.size >= this.max) {

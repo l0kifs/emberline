@@ -7,7 +7,25 @@
  * extension -- the extension is deliberately dumb.
  */
 
-const MAX_OVERLAP_SCAN = 200;
+/**
+ * Whether the last `size` code units of `text` equal the first `size` of `suffix`.
+ *
+ * Compared by code unit, without slicing, so a candidate length costs no
+ * allocation. This is what lets the scan below be uncapped: the previous version
+ * sliced both operands per iteration and capped the scan at 200 to bound that, but
+ * the cap was a cliff, not a graceful cutoff -- an overlap one character past it
+ * was not partially stripped, it was left in full, rendering visibly duplicated
+ * code on accept.
+ */
+function overlapsAt(text: string, suffix: string, size: number): boolean {
+	const base = text.length - size;
+	for (let i = 0; i < size; i++) {
+		if (text.charCodeAt(base + i) !== suffix.charCodeAt(i)) {
+			return false;
+		}
+	}
+	return true;
+}
 
 /**
  * Drop a tail of `text` that already appears at the head of `suffix`.
@@ -17,17 +35,15 @@ const MAX_OVERLAP_SCAN = 200;
  *
  * Compares by UTF-16 code unit where Python compared by code point. That differs
  * only when an astral character straddles the overlap boundary exactly; do not
- * "fix" it with `Array.from`, which would add O(n) allocations per keystroke to
- * the hottest path in the server for no reachable benefit.
+ * "fix" it with `Array.from`, which would add O(n) allocations per call for no
+ * reachable benefit. Runs once per generation, not per keystroke.
  */
 function stripSuffixOverlap(text: string, suffix: string): string {
 	if (!text || !suffix) {
 		return text;
 	}
-	const head = suffix.slice(0, MAX_OVERLAP_SCAN);
-	const limit = Math.min(text.length, head.length);
-	for (let size = limit; size > 0; size--) {
-		if (text.slice(text.length - size) === head.slice(0, size)) {
+	for (let size = Math.min(text.length, suffix.length); size > 0; size--) {
+		if (overlapsAt(text, suffix, size)) {
 			return text.slice(0, text.length - size);
 		}
 	}

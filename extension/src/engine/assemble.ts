@@ -37,8 +37,13 @@ export class Assembler {
 		// Keep the tail of the prefix and the head of the suffix -- the text next to
 		// the cursor is what carries signal. llama.cpp clamps to 3:1 of n_batch
 		// anyway, so anything beyond this is serialized for nothing.
-		const prefix = args.prefix.slice(-this.s.maxPrefixChars);
-		const suffix = args.suffix.slice(0, this.s.maxSuffixChars);
+		// `slice(-n)` is the wrong primitive at the edges: -0 === 0, so a limit of 0
+		// would return the *whole* prefix instead of none of it, and a negative limit
+		// would keep the head instead of the tail. Both invert the clamp exactly when
+		// it matters most. Length arithmetic has neither edge.
+		const prefixBudget = Math.max(0, this.s.maxPrefixChars);
+		const prefix = args.prefix.slice(Math.max(0, args.prefix.length - prefixBudget));
+		const suffix = args.suffix.slice(0, Math.max(0, this.s.maxSuffixChars));
 
 		const extra: ExtraChunk[] = [];
 

@@ -94,8 +94,11 @@ export class ExampleStore implements ExampleSource {
 			}
 			parsed.push(row);
 		}
-		// Oldest first in the file, so the newest survive the cap.
-		this.rows = parsed.slice(-this.opts.maxRows);
+		// Oldest first in the file, so the newest survive the cap. Sliced by index
+		// rather than `slice(-maxRows)`: -0 === 0, so a cap of 0 would keep every row
+		// instead of none, turning the bound off exactly where it was asked for.
+		const cap = Math.max(0, this.opts.maxRows);
+		this.rows = parsed.slice(Math.max(0, parsed.length - cap));
 		this.log(
 			`example store ready: ${this.rows.length} examples` +
 				(skipped > 0 ? ` (${skipped} unreadable lines skipped)` : ''),
@@ -127,11 +130,20 @@ export class ExampleStore implements ExampleSource {
 			return;
 		}
 		const prefix = args.prefix.slice(-QUERY_TAIL_CHARS);
+		const rowTokens = tokens(prefix);
+		// A row whose prefix has no tokens scores 0 against every query, so it can
+		// never be retrieved -- it would only consume a maxRows slot and a line on
+		// disk. `similarity` treats an empty query set as a non-match, so guard the
+		// exact thing that determines retrievability rather than `prefix.trim()`,
+		// which would still admit a token-less prefix like `)`.
+		if (rowTokens.size === 0) {
+			return;
+		}
 		const row: Row = {
 			prefix,
 			completion: args.completion,
 			languageId: args.languageId,
-			tokens: tokens(prefix),
+			tokens: rowTokens,
 		};
 		this.rows.push(row);
 		if (this.rows.length > this.opts.maxRows) {

@@ -31,6 +31,21 @@ async function store(over: Partial<ExampleStoreOptions> = {}) {
 	return { s, filePath };
 }
 
+/** A store file written by hand, oldest row first, so caps can be probed at startup. */
+function seedFile(rows: number): string {
+	const filePath = path.join(tmp, `seeded-${seq++}.jsonl`);
+	const body = Array.from({ length: rows }, (_, i) =>
+		JSON.stringify({
+			prefix: `alphaToken betaToken v${i}`,
+			completion: `return ${i}`,
+			languageId: 'python',
+			createdAt: 1,
+		}),
+	).join('\n');
+	fs.writeFileSync(filePath, `${body}\n`);
+	return filePath;
+}
+
 describe('example store', () => {
 	it('retrieves an example whose cursor context overlaps the query', async () => {
 		const { s } = await store();
@@ -195,5 +210,228 @@ describe('example store', () => {
 		}
 		await s.close();
 		assert.equal(fs.existsSync(`${filePath}.tmp`), false);
+	});
+
+	it('keeps no rows at all when maxRows is 0', async () => {
+		// The bug this guards: start() sliced with `parsed.slice(-maxRows)`, and
+		// -0 === 0, so a cap of 0 kept EVERY row instead of none -- the bound turned
+		// itself off at exactly the value that asked for the tightest bound.
+		const filePath = seedFile(3);
+		const s = new ExampleStore({ filePath, topK: 9, minSimilarity: 0, maxRows: 0 });
+		await s.start();
+		assert.equal(s.count(), 0);
+		await s.close();
+	});
+
+	it('does not rewrite the file when the row count is exactly maxRows', async () => {
+		// Compaction is amortised: it must fire only when disk lines exceed the rows
+		// we kept. At exactly the cap nothing was dropped, so nothing is owed.
+		const filePath = seedFile(3);
+		const before = fs.readFileSync(filePath, 'utf8');
+		const s = new ExampleStore({ filePath, topK: 9, minSimilarity: 0, maxRows: 3 });
+		await s.start();
+		await s.close();
+		assert.equal(s.count(), 3);
+		assert.equal(fs.readFileSync(filePath, 'utf8'), before);
+	});
+
+	it('keeps the newest maxRows when the file holds one row too many', async () => {
+		const filePath = seedFile(4);
+		const s = new ExampleStore({ filePath, topK: 9, minSimilarity: 0, maxRows: 3 });
+		await s.start();
+		const hits = await s.search({ prefix: 'alphaToken', languageId: 'python' });
+		await s.close();
+		assert.equal(s.count(), 3);
+		assert.deepEqual(
+			hits.map((h) => h.completion).sort(),
+			['return 1', 'return 2', 'return 3'],
+		);
+	});
+
+	it('returns nothing when topK is 0', async () => {
+		const { s } = await store({ topK: 0, minSimilarity: 0 });
+		await s.add({ prefix: 'alphaToken betaToken', completion: 'A', languageId: 'python' });
+		const hits = await s.search({ prefix: 'alphaToken betaToken', languageId: 'python' });
+		assert.deepEqual(hits, []);
+	});
+
+	it('returns only the highest-scoring row when topK is 1', async () => {
+		const { s } = await store({ topK: 1, minSimilarity: 0 });
+		await s.add({ prefix: 'zzzOne zzzTwo zzzThree', completion: 'FAR', languageId: 'python' });
+		await s.add({ prefix: 'alphaToken betaToken gammaToken', completion: 'NEAR', languageId: 'python' });
+		const hits = await s.search({ prefix: 'alphaToken betaToken gammaToken', languageId: 'python' });
+		assert.equal(hits.length, 1);
+		assert.equal(hits[0].completion, 'NEAR');
+	});
+
+	it('returns every match when topK exceeds the number of matches', async () => {
+		const { s } = await store({ topK: 10, minSimilarity: 0 });
+		await s.add({ prefix: 'alphaToken betaToken', completion: 'A', languageId: 'python' });
+		await s.add({ prefix: 'gammaToken deltaToken', completion: 'B', languageId: 'python' });
+		const hits = await s.search({ prefix: 'alphaToken betaToken', languageId: 'python' });
+		assert.equal(hits.length, 2);
+	});
+
+	it('includes a row scoring exactly the threshold', async () => {
+		// The filter is `>=`, and the boundary is where an off-by-one flips a hit into
+		// a miss. Jaccard of {alpha,beta,gamma} against {alpha,beta,delta} is
+		// 2/(3+3-2) = 0.5 exactly -- representable, so this is not a float-fuzz test.
+		const { s } = await store({ topK: 9, minSimilarity: 0.5 });
+		await s.add({
+			prefix: 'alphaToken betaToken deltaToken',
+			completion: 'ON THE LINE',
+			languageId: 'python',
+		});
+		await s.add({
+			prefix: 'alphaToken deltaToken epsilonToken',
+			completion: 'BELOW THE LINE',
+			languageId: 'python',
+		});
+		const hits = await s.search({
+			prefix: 'alphaToken betaToken gammaToken',
+			languageId: 'python',
+		});
+		assert.deepEqual(
+			hits.map((h) => h.completion),
+			['ON THE LINE'],
+		);
+	});
+
+	it('admits rows with zero overlap when minSimilarity is 0', async () => {
+		// `>= 0` is true of a score of 0, so a floor of 0 is genuinely no floor: rows
+		// sharing not one token still fill top-k slots.
+		const { s } = await store({ topK: 9, minSimilarity: 0 });
+		await s.add({ prefix: 'zzzOne zzzTwo', completion: 'NO OVERLAP', languageId: 'python' });
+		await s.add({ prefix: 'alphaToken betaToken', completion: 'OVERLAP', languageId: 'python' });
+		const hits = await s.search({ prefix: 'alphaToken betaToken', languageId: 'python' });
+		assert.deepEqual(
+			hits.map((h) => h.completion),
+			['OVERLAP', 'NO OVERLAP'],
+		);
+	});
+
+	it('requires an identical token set when minSimilarity is 1', async () => {
+		const { s } = await store({ topK: 9, minSimilarity: 1 });
+		await s.add({ prefix: 'alphaToken betaToken', completion: 'EXACT', languageId: 'python' });
+		await s.add({
+			prefix: 'alphaToken betaToken gammaToken',
+			completion: 'SUPERSET',
+			languageId: 'python',
+		});
+		const hits = await s.search({ prefix: 'alphaToken betaToken', languageId: 'python' });
+		assert.deepEqual(
+			hits.map((h) => h.completion),
+			['EXACT'],
+		);
+	});
+
+	it('ignores an empty completion', async () => {
+		const { s } = await store();
+		await s.add({ prefix: 'def f():\n    ', completion: '', languageId: 'python' });
+		assert.equal(s.count(), 0);
+	});
+
+	it('drops a row whose prefix has no tokens', async () => {
+		// A prefix with no tokens scores 0 against every query, so storing it would
+		// only consume a maxRows slot and a line on disk for a row that can never be
+		// retrieved. `add` now gates on the prefix token set, not just the completion.
+		const { s } = await store();
+		await s.add({ prefix: '', completion: 'return 1', languageId: 'python' });
+		// A token-less-but-non-blank prefix (punctuation only) is dropped too -- the
+		// guard is on tokens, not on `prefix.trim()`.
+		await s.add({ prefix: ')', completion: 'return 2', languageId: 'python' });
+		assert.equal(s.count(), 0);
+	});
+
+	it('returns nothing when the query yields no tokens', async () => {
+		const { s } = await store({ minSimilarity: 0 });
+		await s.add({ prefix: 'alphaToken betaToken', completion: 'A', languageId: 'python' });
+		const hits = await s.search({ prefix: '  ){;', languageId: 'python' });
+		assert.deepEqual(hits, []);
+	});
+
+	it('returns nothing when searching an empty store', async () => {
+		const { s } = await store({ minSimilarity: 0 });
+		const hits = await s.search({ prefix: 'alphaToken betaToken', languageId: 'python' });
+		assert.deepEqual(hits, []);
+	});
+
+	it('stores only the tail of a prefix longer than the query window', async () => {
+		// QUERY_TAIL_CHARS = 512: only the text at the cursor carries retrieval
+		// signal, so the head is dropped at write time, not just at query time.
+		const { s } = await store({ minSimilarity: 0 });
+		const long = `headMarker ${'x'.repeat(600)} tailMarker`;
+		await s.add({ prefix: long, completion: 'T', languageId: 'python' });
+		const hits = await s.search({ prefix: 'tailMarker', languageId: 'python' });
+		assert.equal(hits.length, 1);
+		assert.equal(hits[0].prefix.length, 512);
+		assert.equal(hits[0].prefix, long.slice(-512));
+		assert.equal(hits[0].prefix.includes('headMarker'), false);
+	});
+
+	it('loses no line when two adds are in flight at once', async () => {
+		// The `tail` promise chain is what serialises appends. Two unawaited adds
+		// racing on the same fd would otherwise interleave or drop a write.
+		const { s, filePath } = await store({ maxRows: 100 });
+		const first = s.add({ prefix: 'alphaToken', completion: 'A', languageId: 'python' });
+		const second = s.add({ prefix: 'betaToken', completion: 'B', languageId: 'python' });
+		await Promise.all([first, second]);
+		await s.close();
+		const lines = fs
+			.readFileSync(filePath, 'utf8')
+			.split('\n')
+			.filter((l) => l.trim() !== '');
+		assert.equal(lines.length, 2);
+		assert.deepEqual(
+			lines.map((l) => (JSON.parse(l) as { completion: string }).completion).sort(),
+			['A', 'B'],
+		);
+	});
+
+	it('searches cleanly before start has run', async () => {
+		const s = new ExampleStore({
+			filePath: path.join(tmp, 'never-started.jsonl'),
+			topK: 3,
+			minSimilarity: 0,
+			maxRows: 10,
+		});
+		const hits = await s.search({ prefix: 'alphaToken betaToken', languageId: 'python' });
+		assert.deepEqual(hits, []);
+	});
+
+	it('counts zero on a fresh store', async () => {
+		const { s } = await store();
+		assert.equal(s.count(), 0);
+	});
+
+	it('tolerates close being called twice', async () => {
+		const { s } = await store();
+		await s.add({ prefix: 'alphaToken', completion: 'A', languageId: 'python' });
+		await s.close();
+		await s.close();
+		assert.equal(s.count(), 1);
+	});
+
+	it('starts empty when every line in the store is corrupt', async () => {
+		const filePath = path.join(tmp, `all-corrupt-${seq++}.jsonl`);
+		fs.writeFileSync(filePath, 'not json at all\n{oops\n[[[\n');
+		const s = new ExampleStore({ filePath, topK: 3, minSimilarity: 0, maxRows: 10 });
+		await s.start();
+		await s.close();
+		assert.equal(s.count(), 0);
+	});
+
+	it('skips a line that parses but whose prefix is not a string', async () => {
+		// JSON.parse succeeding is not validation: a numeric prefix would reach
+		// tokens() and throw on every keystroke rather than at startup.
+		const filePath = path.join(tmp, `non-string-${seq++}.jsonl`);
+		fs.writeFileSync(
+			filePath,
+			`${JSON.stringify({ prefix: 5, completion: 'x', languageId: 'python', createdAt: 1 })}\n`,
+		);
+		const s = new ExampleStore({ filePath, topK: 3, minSimilarity: 0, maxRows: 10 });
+		await s.start();
+		await s.close();
+		assert.equal(s.count(), 0);
 	});
 });

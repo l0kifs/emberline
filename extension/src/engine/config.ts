@@ -147,10 +147,74 @@ function parseBool(raw: string, name: string): boolean {
 	throw new Error(`${name}: expected a boolean, got ${JSON.stringify(raw)}`);
 }
 
+/**
+ * `Number()` is too permissive for a config surface. It maps '' and '   ' to 0
+ * (so `EMBERLINE__PORT=` -- an exported-but-unset shell var -- silently bound port
+ * 0), and it accepts 0x/0o/0b/underscore forms (so `PORT=0x10` silently became
+ * 16). A decimal-only grammar admits exactly the spellings a human writes for a
+ * setting: optional sign, digits, one decimal point, an exponent.
+ */
+const DECIMAL_RE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
 function parseNumber(raw: string, name: string): number {
-	const n = Number(raw.trim());
+	const trimmed = raw.trim();
+	const n = DECIMAL_RE.test(trimmed) ? Number(trimmed) : Number.NaN;
 	if (!Number.isFinite(n)) {
-		throw new Error(`${name}: expected a number, got ${JSON.stringify(raw)}`);
+		throw new Error(`${name}: expected a decimal number, got ${JSON.stringify(raw)}`);
+	}
+	return n;
+}
+
+interface Bound {
+	min?: number;
+	max?: number;
+	int?: boolean;
+}
+
+/**
+ * Range and integrality per numeric field, applied after parsing so a bad value
+ * fails at startup naming the variable, rather than surfacing later as an opaque
+ * EADDRINUSE/EACCES on a nonsense port or -- the case that motivated this --
+ * `ringChunkLines: 0` wedging the chunk loop in ring.ts (it increments by that
+ * value) into an infinite loop that never yields the event loop back.
+ *
+ * `port` forbids 0 deliberately: it is the OS "pick an ephemeral port" idiom, but
+ * nothing here configures it that way, and allowing it re-opens the door next to
+ * the empty-string bug this file just closed.
+ */
+const BOUNDS: Partial<Record<keyof Settings, Bound>> = {
+	port: { min: 1, max: 65535, int: true },
+	llamaPort: { min: 1, max: 65535, int: true },
+	llamaStartupTimeoutS: { min: 0 },
+	nPredict: { min: 1, int: true },
+	tMaxPredictMs: { min: 0 },
+	temperature: { min: 0, max: 2 },
+	topP: { min: 0, max: 1 },
+	topK: { min: 0, int: true },
+	maxPrefixChars: { min: 0, int: true },
+	maxSuffixChars: { min: 0, int: true },
+	cacheMaxEntries: { min: 0, int: true },
+	idleTimeoutS: { min: 0 },
+	ringMaxChunks: { min: 0, int: true },
+	ringChunkLines: { min: 1, int: true },
+	examplesTopK: { min: 0, int: true },
+	examplesMinSimilarity: { min: 0, max: 1 },
+	examplesMaxRows: { min: 0, int: true },
+};
+
+function checkBound(key: keyof Settings, n: number, name: string): number {
+	const b = BOUNDS[key];
+	if (b === undefined) {
+		return n;
+	}
+	if (b.int && !Number.isInteger(n)) {
+		throw new Error(`${name}: expected an integer, got ${n}`);
+	}
+	if (b.min !== undefined && n < b.min) {
+		throw new Error(`${name}: must be >= ${b.min}, got ${n}`);
+	}
+	if (b.max !== undefined && n > b.max) {
+		throw new Error(`${name}: must be <= ${b.max}, got ${n}`);
 	}
 	return n;
 }
@@ -179,6 +243,15 @@ function parseList(raw: string, name: string): string[] {
 	return trimmed.split(/\s+/);
 }
 
+/**
+ * String fields where an empty value is a real choice rather than a mistake.
+ * `llamaPreset` can legitimately be blanked to drive everything through
+ * `llamaExtraArgs`. Every other string field ('' host, '' binary, '' dataDir) is
+ * the exported-but-unset shell var again, and taking it literally clobbers a
+ * working default -- so it fails instead.
+ */
+const EMPTY_STRING_OK = new Set<keyof Settings>(['llamaPreset']);
+
 export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
 	const out = { ...DEFAULTS };
 	for (const key of Object.keys(DEFAULTS) as Array<keyof Settings>) {
@@ -191,10 +264,13 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
 		if (typeof current === 'boolean') {
 			(out[key] as boolean) = parseBool(raw, name);
 		} else if (typeof current === 'number') {
-			(out[key] as number) = parseNumber(raw, name);
+			(out[key] as number) = checkBound(key, parseNumber(raw, name), name);
 		} else if (Array.isArray(current)) {
 			(out[key] as string[]) = parseList(raw, name);
 		} else {
+			if (raw === '' && !EMPTY_STRING_OK.has(key)) {
+				throw new Error(`${name}: must not be empty`);
+			}
 			(out[key] as string) = raw;
 		}
 	}

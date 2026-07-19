@@ -117,11 +117,17 @@ export class RingContext {
 			return [];
 		}
 
+		// One set covers both the current-file exclusion and de-duplication: a path
+		// open in two tab groups arrives twice, and without this each copy spent an
+		// input_extra slot on byte-identical text -- wasteful against the known
+		// unbounded-input_extra rough edge.
+		const seen = new Set<string>([args.currentPath]);
 		const scored: Array<{ score: number; chunk: Chunk }> = [];
 		for (const p of args.openPaths) {
-			if (p === args.currentPath) {
+			if (seen.has(p)) {
 				continue;
 			}
+			seen.add(p);
 			for (const chunk of this.chunksFor(p)) {
 				const score = similarity(query, chunk.tokens);
 				if (score > 0) {

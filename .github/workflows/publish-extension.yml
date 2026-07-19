@@ -10,8 +10,9 @@
 # differs between the two.
 #
 # Secrets required (repo settings -> Secrets and variables -> Actions):
-#   VSCE_PAT  -- Marketplace PAT scoped to Marketplace: Manage, "all accessible
-#                organizations". See PUBLISHING.md.
+#   VSCE_PAT  -- Marketplace PAT scoped to Marketplace: Manage. The org selection
+#                does not matter (Azure retired "all accessible organizations").
+#                See PUBLISHING.md.
 #
 # The bundled darwin-arm64 build must run on macOS: fetch-llama.mjs verifies the
 # staged binary by executing it, which only works on the target platform.

@@ -257,6 +257,14 @@ Extension:
 
 ## Testing
 
+**Mandatory: before reporting any new or changed code as done, run it through
+[`docs/ai-code-check-checklist.md`](docs/ai-code-check-checklist.md).** This is not optional and
+not a general "review the code" pass — follow its procedure (§1): inventory the change, then run
+the Input Matrix, Boundary Analysis, Unhappy Paths, decision tables, and state-transition checks
+as *separate focused passes*, and gate the result against its Definition of Done (§10). Adding or
+updating the automated tests below does not substitute for this checklist, and the checklist does
+not substitute for them — both are required.
+
 There are **two test tiers, two runners**:
 
 - `src/test/engine/**` — the server. `node:test` (`describe`/`it`) + `node:assert/strict`, run by

@@ -2,7 +2,7 @@
   "name": "emberline",
   "displayName": "Emberline",
   "description": "Local inline code completion backed by a llama.cpp FIM model.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "l0kifs",
   "license": "MIT",
   "icon": "icon.png",
@@ -52,6 +52,76 @@
     "workspace"
   ],
   "contributes": {
+    "icons": {
+      "ember-ready": {
+        "description": "Emberline status: ready",
+        "default": {
+          "fontPath": "./media/emberline-icons.woff",
+          "fontCharacter": "\\E900"
+        }
+      },
+      "ember-think-1": {
+        "description": "Emberline status: thinking (frame 1)",
+        "default": {
+          "fontPath": "./media/emberline-icons.woff",
+          "fontCharacter": "\\E901"
+        }
+      },
+      "ember-think-2": {
+        "description": "Emberline status: thinking (frame 2)",
+        "default": {
+          "fontPath": "./media/emberline-icons.woff",
+          "fontCharacter": "\\E902"
+        }
+      },
+      "ember-think-3": {
+        "description": "Emberline status: thinking (frame 3)",
+        "default": {
+          "fontPath": "./media/emberline-icons.woff",
+          "fontCharacter": "\\E903"
+        }
+      },
+      "ember-think-4": {
+        "description": "Emberline status: thinking (frame 4)",
+        "default": {
+          "fontPath": "./media/emberline-icons.woff",
+          "fontCharacter": "\\E904"
+        }
+      },
+      "ember-start-on": {
+        "description": "Emberline status: starting (cursor on)",
+        "default": {
+          "fontPath": "./media/emberline-icons.woff",
+          "fontCharacter": "\\E905"
+        }
+      },
+      "ember-start-off": {
+        "description": "Emberline status: starting (cursor off)",
+        "default": {
+          "fontPath": "./media/emberline-icons.woff",
+          "fontCharacter": "\\E906"
+        }
+      },
+      "ember-disabled": {
+        "description": "Emberline status: disabled",
+        "default": {
+          "fontPath": "./media/emberline-icons.woff",
+          "fontCharacter": "\\E907"
+        }
+      }
+    },
+    "colors": [
+      {
+        "id": "emberline.statusIcon",
+        "description": "Foreground colour of the Emberline status bar icon (the ember tint).",
+        "defaults": {
+          "dark": "#ff8a3d",
+          "light": "#b8430f",
+          "highContrast": "#ff8a3d",
+          "highContrastLight": "#8f3208"
+        }
+      }
+    ],
     "configuration": {
       "title": "Emberline",
       "properties": {
@@ -155,7 +225,8 @@
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vscode-test",
-    "test:engine": "npm run compile-tests && node --test \"out/test/engine/**/*.test.js\""
+    "test:engine": "npm run compile-tests && node --test \"out/test/engine/**/*.test.js\"",
+    "build-icon-font": "node scripts/build-icon-font.mjs"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -168,6 +239,9 @@
     "esbuild": "^0.28.1",
     "eslint": "^9.18.0",
     "npm-run-all": "^4.1.5",
+    "svg2ttf": "^6.1.0",
+    "svgicons2svgfont": "^15.0.1",
+    "ttf2woff": "^3.0.0",
     "typescript": "^5.7.3"
   }
 }

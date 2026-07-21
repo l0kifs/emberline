@@ -36,6 +36,7 @@ import * as vscode from 'vscode';
 
 import type { Config } from '../config';
 import { loadSettings, logPath } from '../engine/config';
+import type { StatusBar } from '../status';
 
 /** First run downloads ~1.6GB of model, and /health cannot answer until it lands. */
 const STARTUP_TIMEOUT_MS = 10 * 60 * 1000;
@@ -54,11 +55,22 @@ export class ServerManager implements vscode.Disposable {
 	private spawnedAt: number | undefined;
 	private inflight: Promise<boolean> | undefined;
 	private declined = false;
+	private provisioning = false;
+
+	/**
+	 * True while the bundled server is being started (the multi-minute first-run
+	 * model download). The provider uses this so a keystroke that fails during the
+	 * download does not stomp the 'starting' status back to 'error'.
+	 */
+	get isProvisioning(): boolean {
+		return this.provisioning;
+	}
 
 	constructor(
 		private readonly ctx: vscode.ExtensionContext,
 		private readonly cfg: Config,
 		private readonly log: vscode.LogOutputChannel,
+		private readonly status: StatusBar,
 	) {}
 
 	/**
@@ -147,9 +159,22 @@ export class ServerManager implements vscode.Disposable {
 	}
 
 	private async provision(): Promise<boolean> {
+		this.provisioning = true;
+		try {
+			return await this.provisionInner();
+		} finally {
+			this.provisioning = false;
+		}
+	}
+
+	private async provisionInner(): Promise<boolean> {
 		return vscode.window.withProgress(
 			{ location: vscode.ProgressLocation.Notification, title: 'Emberline' },
 			async (progress) => {
+				// Until now the status bar showed 'error' (the keystroke that triggered
+				// this caught ServerUnreachableError) for the whole multi-minute first
+				// run. Show the 'starting' indicator instead.
+				this.status.set('starting', 'Emberline: starting the local server (first run downloads a model)…');
 				try {
 					this.spawnServer();
 					progress.report({
@@ -157,10 +182,12 @@ export class ServerManager implements vscode.Disposable {
 					});
 					await this.awaitHealthy();
 					this.log.info('server is healthy');
+					this.status.set('idle');
 					return true;
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
 					this.log.error(`server setup failed: ${message}`);
+					this.status.set('error', message);
 					void vscode.window
 						.showErrorMessage(`Emberline setup failed: ${message}`, 'Show Logs')
 						.then((c) => c && this.log.show());

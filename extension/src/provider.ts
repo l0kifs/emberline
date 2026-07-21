@@ -128,10 +128,16 @@ export class EmberlineProvider implements vscode.InlineCompletionItemProvider {
 				// take minutes and this keystroke must not block on it. Later keystrokes
 				// start succeeding once the server answers. When the user runs their own
 				// server (manageServer=false), fall back to the manual setup pointer.
-				this.status.set('error', 'server unreachable — no completions');
 				if (this.cfg.manageServer) {
+					// ServerManager owns the status while it provisions (a multi-minute
+					// first-run download it shows as 'starting'); don't stomp that back to
+					// 'error' on every keystroke that fails meanwhile.
+					if (!this.server.isProvisioning) {
+						this.status.set('error', 'server unreachable — no completions');
+					}
 					void this.server.ensure();
 				} else {
+					this.status.set('error', 'server unreachable — no completions');
 					this.onboarding.serverUnreachable(err.endpoint);
 				}
 				return undefined;

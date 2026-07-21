@@ -34,7 +34,14 @@ try {
 	process.exit(2);
 }
 
-const required = ['extension/dist/extension.js', 'extension/dist/server.js'];
+const required = [
+	'extension/dist/extension.js',
+	'extension/dist/server.js',
+	// The status bar's `$(ember-*)` glyph family. Missing -> the icons render as
+	// blank boxes, but only on a user's machine; contributes.icons is not validated
+	// at package time.
+	'extension/media/emberline-icons.woff',
+];
 if (expectLlama) {
 	required.push('extension/bin/llama/llama-server');
 }

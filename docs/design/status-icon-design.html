@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emberline · Ready mark + states — Rising Light</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#141a22; --panel2:#1a212c; --line:#28313e;
+    --ink:#e9eef4; --muted:#9aa7b4; --faint:#6b7683; --accent:#ff8a3d;
+    --ember:#ff8a3d; --emberL:#b8430f;
+    --sbDarkBg:#181818; --sbLightBg:#f3f3f3; --errBg:#e51400;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:40px 24px 90px}
+  .wrap{max-width:1040px;margin:0 auto}
+  .kicker{letter-spacing:.16em;text-transform:uppercase;font-size:12px;color:var(--accent);font-weight:700}
+  h1{font-size:30px;margin:.2em 0 .1em;letter-spacing:-.01em} h1 small{color:var(--muted);font-weight:400;font-size:18px}
+  .thesis{color:var(--muted);max-width:70ch;margin:.4em 0 0}
+  h2{font-size:15px;text-transform:uppercase;letter-spacing:.12em;color:var(--faint);margin:40px 0 14px;font-weight:700}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:14px;padding:22px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace} a{color:var(--accent)} .note{color:var(--faint);font-size:12.5px}
+  .constraint{background:linear-gradient(180deg,#1a1410,#150f0c);border:1px solid #3a2a1c;border-radius:12px;padding:15px 18px;color:#e8d3bf;font-size:13px} .constraint b{color:#ffcc9a}
+  .hero{display:flex;gap:28px;align-items:center;flex-wrap:wrap}
+  .heroArt{width:250px;height:150px;border-radius:14px;display:grid;place-items:center;
+    background:radial-gradient(150px 90px at 72% 60%, rgba(255,138,61,.20), transparent 70%), #0a0d12;color:var(--ember)}
+  .heroArt svg{width:210px;filter:drop-shadow(0 0 5px rgba(255,150,70,.35))}
+  .spec{color:var(--muted);font-size:13.5px;max-width:46ch} .spec b{color:var(--ink)}
+  .spec ol{margin:.3em 0 0;padding-left:1.1em} .spec li{margin:5px 0}
+  .states{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+  .st{background:#0f141b;border:1px solid var(--line);border-radius:12px;padding:16px;text-align:center}
+  .st .art{height:70px;display:grid;place-items:center;color:var(--ember)} .st .art svg{width:130px}
+  .st.dim .art{color:#6f7885} .st.err .art{color:#fff}
+  .st h3{margin:8px 0 2px;font-size:14px} .st .tip{color:var(--faint);font-size:11.5px;min-height:2.4em}
+  .st .real{margin-top:8px;font-size:10.5px;color:var(--emberL);border-top:1px dashed var(--line);padding-top:7px}
+  .sb{display:flex;align-items:center;height:26px;border-radius:6px;overflow:hidden;font:12px/1 -apple-system,Segoe UI,sans-serif;user-select:none}
+  .sb.dark{background:var(--sbDarkBg);color:#8b8b8b} .sb.light{background:var(--sbLightBg);color:#8a8a8a}
+  .sb .seg{padding:0 9px;white-space:nowrap} .sb .spacer{flex:1}
+  .sb .emb{display:flex;align-items:center;padding:0 10px} .sb.dark .emb{color:var(--ember)} .sb.light .emb{color:var(--emberL)}
+  .sb .emb svg{width:32px;height:18px} .sb .emb.err{background:var(--errBg);color:#fff} .sb .emb.dim{opacity:.55}
+  .sbrow{display:grid;grid-template-columns:60px 1fr;gap:12px;align-items:center;margin:9px 0} .sbrow .l{color:var(--muted);font-size:12px;text-align:right}
+  .px{display:flex;gap:16px;flex-wrap:wrap} .px .b{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:10.5px;color:var(--muted)}
+  .px .box{width:34px;height:20px;display:grid;place-items:center;border-radius:3px}
+  .px .box.d{background:#181818;color:var(--ember)} .px .box.l{background:#f3f3f3;color:var(--emberL)} .px .box svg{width:32px;height:19px}
+  .gray{display:flex;gap:20px;flex-wrap:wrap;align-items:center;filter:grayscale(1) contrast(1.05)}
+  .gray .g{display:flex;flex-direction:column;align-items:center;gap:6px;color:#c9c9c9;font-size:11px}
+  .gray .g svg{width:48px;color:#cfcfcf} .gray .g .chip{padding:3px 6px;border-radius:6px} .gray .g.err .chip{background:#555;color:#fff} .gray .g.dim{opacity:.5}
+  ul.why{margin:0;padding-left:18px;color:var(--muted)} ul.why li{margin:7px 0} ul.why b{color:var(--ink)}
+  .mark.starting .cursor{animation:blink 1.05s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  @media (prefers-reduced-motion:reduce){.mark.starting .cursor{animation:none} #reveal rect animate{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">Emberline · Ready mark &amp; states · Concept 1 of 3</div>
+  <h1>Rising Light <small>— the cursor lights the last line</small></h1>
+  <p class="thesis">Your <span class="mono">icon.png</span> as a glyph: two hollow lines, a third line
+  <b>lit</b> from the right by a run of vertical strokes, and a solid <b>cursor</b> (rounded rectangle) split off
+  its end. While thinking, that light <b>rises right→left</b> across the last line — like a sunrise. Lines 1 &amp; 2
+  stay dark; only the last line lights.</p>
+
+  <div class="constraint" style="margin-top:20px">
+    <b>How the motion ships.</b> A status-bar glyph is <b>one flat colour</b>. The <i>sweep</i> and <i>blink</i>
+    here aren't CSS — the extension animates by swapping a few pre-rendered glyph frames on a timer (sweep ≈ 5
+    frames, blink = 2), which it’s free to do. Ready/Disabled are static single glyphs.
+    <span class="mono">icon.png</span> is untouched.
+  </div>
+
+  <h2>Ready — exactly as specified</h2>
+  <div class="card hero">
+    <div class="heroArt" id="heroArt"></div>
+    <div class="spec"><ol>
+      <li><b>Lines 1 &amp; 2</b> — hollow, border only.</li>
+      <li><b>Line 3</b> — hollow on the left, then vertical strokes grow denser toward the right until the end is
+      <b>solid</b> (no gap) — lit by the cursor.</li>
+      <li><b>The cursor</b> — a fully-filled rounded <b>rectangle</b>, split off the end of line 3.</li>
+    </ol></div>
+  </div>
+
+  <h2>The states</h2>
+  <div class="states" id="states"></div>
+  <p class="note">Thinking sweeps the fill right→left on the last line only. Starting drops all lines to hollow and
+  blinks the cursor. (Both animate live above.)</p>
+
+  <h2>In the status bar</h2>
+  <div class="card">
+    <div class="sbrow"><div class="l">Dark</div><div class="sb dark" id="bar-dark"></div></div>
+    <div class="sbrow"><div class="l">Light</div><div class="sb light" id="bar-light"></div></div>
+    <p class="note">Ready, real scale. Warm ember on dark = the icon.png feeling; on light it deepens for contrast.</p>
+  </div>
+
+  <h2>16px — what actually ships</h2>
+  <div class="card"><div class="px" id="px"></div>
+    <p class="note">Taller lines and a filled line-3 end survive the shrink; the cursor is the clearest anchor.</p></div>
+
+  <h2>Grayscale proof</h2>
+  <div class="card"><div class="gray" id="gray"></div>
+    <p class="note">Bottom-lit / sweeping / all-dark+blink / hollow+slash / pill — separable without colour (WCAG 1.4.1).</p></div>
+
+  <h2>Why this direction</h2>
+  <div class="card"><ul class="why">
+    <li><b>The metaphor is the mechanic.</b> "The cursor lights the line" is the brand story and the busy indicator
+    in one — completions literally light up as the engine works.</li>
+    <li><b>Restrained.</b> Only the last line ever animates; the two hollow lines are a calm, constant frame.</li>
+    <li><b>Distinct without colour.</b> Every state is a different silhouette or motion, not a recoloured copy.</li>
+  </ul></div>
+</div>
+
+<!-- shared defs: inner-stadium clip for line 3 + the animated right→left reveal -->
+<svg width="0" height="0" style="position:absolute"><defs id="defs"></defs></svg>
+
+<script>
+const LEFT=18, RC=8, SW=3;
+const CY=[20,48,76];
+const X2=[98,64,88];                 // right centreline end of line 1,2,3
+const CUR={x:106, w:15, cy:76, h:26, r:4};   // cursor = tall rounded rectangle
+const HH=RC-1.4;                      // vertical-stroke half height
+const SOLID=74;                       // line 3: solid from here to the right end
+
+const stad=(x1,x2,cy,r)=>`M${x1} ${cy-r}L${x2} ${cy-r}A${r} ${r} 0 0 1 ${x2} ${cy+r}L${x1} ${cy+r}A${r} ${r} 0 0 1 ${x1} ${cy-r}Z`;
+const outline=(i)=>`<path d="${stad(LEFT,X2[i],CY[i],RC)}" fill="none" stroke="currentColor" stroke-width="${SW}"/>`;
+function vlines(x0,x1,cy){
+  let out='',x=x0;
+  while(x<=x1+0.01){
+    const t=Math.min(1,(x-x0)/(x1-x0));
+    const w=(1.1+Math.pow(t,1.4)*2.7).toFixed(2);
+    out+=`<line x1="${x.toFixed(2)}" y1="${(cy-HH).toFixed(2)}" x2="${x.toFixed(2)}" y2="${(cy+HH).toFixed(2)}" stroke="currentColor" stroke-width="${w}" stroke-linecap="round"/>`;
+    x+=1.3+4.4*Math.pow(1-t,1.7);
+  }
+  return out;
+}
+const solidEnd=()=>`<path d="${stad(SOLID,X2[2],CY[2],RC-1)}" fill="currentColor"/>`;
+const cursor=(fill)=>`<rect class="cursor" x="${CUR.x}" y="${CUR.cy-CUR.h/2}" width="${CUR.w}" height="${CUR.h}" rx="${CUR.r}" ${fill}/>`;
+const slash=(bg)=>`<line x1="12" y1="12" x2="122" y2="86" stroke="${bg}" stroke-width="7" stroke-linecap="round"/><line x1="12" y1="12" x2="122" y2="86" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/>`;
+
+// shared defs
+document.getElementById('defs').innerHTML =
+  `<clipPath id="bar3"><path d="${stad(LEFT,X2[2],CY[2],RC-0.5)}"/></clipPath>`+
+  `<clipPath id="reveal" clipPathUnits="userSpaceOnUse"><rect x="94" y="60" width="0" height="34">`+
+    `<animate attributeName="x" values="94;18" dur="1.7s" repeatCount="indefinite" calcMode="linear"/>`+
+    `<animate attributeName="width" values="0;76" dur="1.7s" repeatCount="indefinite" calcMode="linear"/>`+
+  `</rect></clipPath>`;
+
+// line-3 fills
+const litReady    = `<g clip-path="url(#bar3)">${vlines(50,SOLID,CY[2])}${solidEnd()}</g>`;                       // static, right lit
+const litThinking = `<g clip-path="url(#bar3)"><g clip-path="url(#reveal)">${vlines(20,SOLID,CY[2])}${solidEnd()}</g></g>`; // full, swept
+
+function mark(state){
+  const frame=outline(0)+outline(1);        // lines 1 & 2 always hollow
+  let line3=outline(2), fill='', cur, extra='';
+  if(state==='ready'||state==='error'){ fill=litReady;  cur=cursor('fill="currentColor"'); }
+  else if(state==='thinking'){          fill=litThinking; cur=cursor('fill="currentColor"'); }
+  else if(state==='starting'){          fill='';          cur=cursor('fill="currentColor"'); }      // all dark, cursor blinks
+  else if(state==='disabled'){          fill='';          cur=cursor('fill="none" stroke="currentColor" stroke-width="3.2"'); extra=slash('#0f141b'); }
+  return `<svg viewBox="0 0 128 96" class="mark ${state}" fill="currentColor" aria-hidden="true">${frame}${line3}${fill}${cur}${extra}</svg>`;
+}
+
+document.getElementById('heroArt').innerHTML = mark('ready');
+
+const STATES=[
+  {id:'ready',    name:'Ready',    tip:'Emberline: ready',                    real:'static · line 3 lit',          cls:''},
+  {id:'thinking', name:'Thinking', tip:'Emberline: generating…',             real:'sweep frames (line 3 only)',   cls:''},
+  {id:'starting', name:'Starting', tip:'Emberline: downloading model… 62%',  real:'all dark · cursor blinks',     cls:''},
+  {id:'disabled', name:'Disabled', tip:'Emberline: off — click to enable',   real:'hollow + slash · dimmed',      cls:'dim'},
+  {id:'error',    name:'Error',    tip:'Emberline: server unreachable',      real:'line 3 lit · error pill',      cls:'err'},
+];
+document.getElementById('states').innerHTML=STATES.map(s=>`<div class="st ${s.cls}">
+  <div class="art"${s.id==='error'?' style="background:var(--errBg);border-radius:8px"':''}>${mark(s.id)}</div>
+  <h3>${s.name}</h3><div class="tip">${s.tip}</div><div class="real mono">${s.real}</div></div>`).join('');
+function bar(el,theme,state){const cls=state==='error'?'err':state==='disabled'?'dim':'';
+  el.innerHTML=`<span class="seg">◴ main</span><span class="spacer"></span><span class="emb ${cls}">${mark(state)}</span><span class="seg">Ln 42, Col 8</span><span class="seg">Python</span>`;}
+bar(document.getElementById('bar-dark'),'dark','ready'); bar(document.getElementById('bar-light'),'light','ready');
+document.getElementById('px').innerHTML=STATES.map(s=>`<div class="b"><div class="box d">${mark(s.id)}</div><div class="box l">${mark(s.id)}</div>${s.name}</div>`).join('');
+document.getElementById('gray').innerHTML=STATES.map(s=>`<div class="g ${s.cls}"><span class="chip">${mark(s.id)}</span>${s.name}</div>`).join('');
+</script>
+</body>
+</html>

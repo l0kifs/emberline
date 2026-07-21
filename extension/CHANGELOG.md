@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.0] - 2026-07-21
+
+Changed:
+
+- The status bar item is now an on-brand ember mark — a monochrome, ember-tinted
+  rendering of the extension icon (two hollow "code" lines, a third lit from the
+  right, and a cursor) — replacing the mix of generic VS Code codicons. It has
+  distinct glyphs per state and animates: the last line sweeps "lit" right-to-left
+  while generating, and the cursor blinks while the server is starting.
+
+Added:
+
+- A dedicated "starting" status shown during the first-run model download. The
+  status bar previously showed the "error" state for the entire multi-minute
+  download; it now shows a starting indicator and only falls back to error on an
+  actual failure.
+
 ## [0.1.1] - 2026-07-20
 
 Input-validation and edge-case hardening, driven by a systematic test pass

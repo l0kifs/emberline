@@ -45,7 +45,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	// Lifecycle only. Constructed here but not exercised until the first keystroke
 	// finds the server unreachable -- activate must stay cheap (onStartupFinished
 	// fires for every user), so nothing is installed or spawned at startup.
-	const server = new ServerManager(context, cfg, log);
+	const server = new ServerManager(context, cfg, log, status);
 	context.subscriptions.push(server);
 
 	const provider = new EmberlineProvider(client, cfg, log, status, onboarding, server);

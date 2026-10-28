@@ -320,3 +320,5 @@ release checklist, versioning rules and troubleshooting are in
 ## License
 
 MIT
+
+<!-- PR smoke test: safe to discard -->
